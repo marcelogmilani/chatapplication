@@ -6,5 +6,6 @@ data class User(
     val phone: String? = null,
     val username: String? = null,
     val username_lowercase: String? = null,
-    val profilePictureUrl: String? = null
+    val profilePictureUrl: String? = null,
+    val fcmToken: String? = null
 )

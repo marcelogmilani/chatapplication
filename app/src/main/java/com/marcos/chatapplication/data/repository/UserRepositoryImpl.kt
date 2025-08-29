@@ -16,6 +16,23 @@ class UserRepositoryImpl @Inject constructor(
     private val storage: FirebaseStorage
 ) : UserRepository {
 
+    override suspend fun saveFcmToken(token: String): Result<Unit> {
+        val currentUserId = firebaseAuth.currentUser?.uid
+        if (currentUserId == null) {
+            return Result.failure(Exception("Utilizador não autenticado para guardar o token FCM."))
+        }
+        return try {
+            firestore.collection("users").document(currentUserId)
+                .update("fcmToken", token)
+                .await()
+            Log.d("UserRepository", "Token FCM guardado com sucesso no Firestore.")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("UserRepository", "Erro ao guardar o token FCM", e)
+            Result.failure(e)
+        }
+    }
+
     override suspend fun searchUsersByUsername(query: String): Result<List<User>> {
         return try {
             if (query.isBlank()) {
@@ -37,7 +54,6 @@ class UserRepositoryImpl @Inject constructor(
 
             Log.d("UserSearchRepo", "Firestore encontrou ${result.size()} documentos.")
 
-            // Filtrar o usuário atual dos resultados, se o firebaseAuth.currentUser?.uid estiver disponível
             val currentUserId = firebaseAuth.currentUser?.uid
             val users = result.toObjects(User::class.java).filter { user ->
                 currentUserId == null || user.uid != currentUserId
@@ -59,7 +75,7 @@ class UserRepositoryImpl @Inject constructor(
             val user = document.toObject(User::class.java)
             Result.success(user)
         } catch (e: Exception) {
-            Log.e("UserSearchRepo", "Error getting user by ID", e) // Adicionada mensagem de erro mais específica
+            Log.e("UserSearchRepo", "Error getting user by ID", e)
             Result.failure(e)
         }
     }
@@ -67,16 +83,12 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun updateUserProfilePicture(userId: String, imageUri: Uri): Result<String> {
         return try {
-            // Caminho no Storage: profile_pictures/UID_DO_USUARIO/profile.jpg
             val storageRef = storage.reference.child("profile_pictures/$userId/profile.jpg")
 
-            // Faz upload da imagem
             val uploadTask = storageRef.putFile(imageUri).await()
 
-            // Obtém a URL de download
             val downloadUrl = uploadTask.storage.downloadUrl.await().toString()
 
-            // Atualiza o documento do usuário no Firestore
             firestore.collection("users").document(userId)
                 .update("profilePictureUrl", downloadUrl)
                 .await()

@@ -7,4 +7,6 @@ interface UserRepository {
     suspend fun searchUsersByUsername(query: String): Result<List<User>>
     suspend fun getUserById(userId: String): Result<User?>
     suspend fun updateUserProfilePicture(userId: String, imageUri: Uri): Result<String>
+
+    suspend fun saveFcmToken(token: String): Result<Unit>
 }
