@@ -52,6 +52,7 @@ android {
 
 dependencies {
 
+    implementation(libs.firebase.messaging.ktx)
     implementation(libs.firebase.appcheck.playintegrity)
     implementation(libs.firebase.appcheck.playintegrity.debug)
     implementation(libs.firebase.firestore.ktx)
