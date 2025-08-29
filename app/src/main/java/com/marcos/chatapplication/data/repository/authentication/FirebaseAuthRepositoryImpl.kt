@@ -11,8 +11,7 @@ import com.google.firebase.auth.PhoneAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.marcos.chatapplication.domain.contracts.AuthRepository
 import com.marcos.chatapplication.domain.contracts.AuthState
-// Import da data class User para o username_lowercase
-import com.marcos.chatapplication.domain.model.User
+import com.marcos.chatapplication.domain.model.User // User já é importado
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,11 +31,10 @@ class FirebaseAuthRepositoryImpl(
             try {
                 val firebaseUser = auth.currentUser
                 if (firebaseUser != null) {
-                    // Tentativa de buscar o usuário completo do Firestore, incluindo username_lowercase se existir
                     firestore.collection("users").document(firebaseUser.uid).get()
                         .addOnSuccessListener { document ->
                             val userFromFirestore = if (document != null && document.exists()) {
-                                document.toObject(User::class.java) // Agora pode ter username_lowercase
+                                document.toObject(User::class.java)
                             } else {
                                 null
                             }
@@ -44,8 +42,8 @@ class FirebaseAuthRepositoryImpl(
                                 it.copy(
                                     user = firebaseUser.toDomainUser(
                                         usernameFromFirestore = userFromFirestore?.username,
-                                        // Passando também o username_lowercase se disponível
-                                        usernameLowercaseFromFirestore = userFromFirestore?.username_lowercase
+                                        usernameLowercaseFromFirestore = userFromFirestore?.username_lowercase,
+                                        profilePictureUrlFromFirestore = userFromFirestore?.profilePictureUrl // NOVO
                                     ),
                                     isInitialLoading = false
                                 )
@@ -53,10 +51,9 @@ class FirebaseAuthRepositoryImpl(
                         }
                         .addOnFailureListener { e ->
                             Log.w("FirebaseAuthRepo", "Erro ao buscar dados do usuário: ${e.message}", e)
-                            // Se falhar ao buscar do Firestore, usa apenas o que tem do FirebaseUser
                             _authState.update {
                                 it.copy(
-                                    user = firebaseUser.toDomainUser(null, null), // username e username_lowercase serão null
+                                    user = firebaseUser.toDomainUser(null, null, null), // Todos os campos do Firestore são null
                                     isInitialLoading = false
                                 )
                             }
@@ -66,7 +63,7 @@ class FirebaseAuthRepositoryImpl(
                 }
             } catch (e: Exception) {
                 Log.e("FirebaseAuthRepo", "Erro crítico no auth listener", e)
-                _authState.update { it.copy(isInitialLoading = false) } // Garante que o loading termine
+                _authState.update { it.copy(isInitialLoading = false) }
             }
         }
     }
@@ -115,9 +112,8 @@ class FirebaseAuthRepositoryImpl(
                 val usernameLowercase = username.lowercase()
 
                 if (isNewUser) {
-
                     val usernameQuery = firestore.collection("users")
-                        .whereEqualTo("username_lowercase", usernameLowercase) // USAR username_lowercase para a checagem
+                        .whereEqualTo("username_lowercase", usernameLowercase)
                         .get()
                         .await()
 
@@ -127,11 +123,13 @@ class FirebaseAuthRepositoryImpl(
                     }
 
 
+
                     val userDocument = mapOf(
                         "uid" to firebaseUser.uid,
                         "username" to username,
                         "username_lowercase" to usernameLowercase,
                         "phone" to firebaseUser.phoneNumber
+
                     )
 
                     val batch = firestore.batch()
@@ -140,13 +138,15 @@ class FirebaseAuthRepositoryImpl(
                     batch.commit().await()
                 }
 
-                // Atualizar o AuthState com o usuário, incluindo o username_lowercase
-                // Idealmente, buscaria o usuário do Firestore aqui para ter o objeto User completo,
-                // mas para simplificar, vamos passar os dois campos para toDomainUser.
-                 _authState.update {
-                    it.copy(user = firebaseUser.toDomainUser(username, usernameLowercase))
-                }
 
+                _authState.update {
+                    it.copy(user = firebaseUser.toDomainUser(
+                        usernameFromFirestore = username, // Para novos usuários, este é o username fornecido
+                        usernameLowercaseFromFirestore = usernameLowercase, // Para novos usuários
+                        profilePictureUrlFromFirestore = null // Para novos usuários, ainda não há URL
+                        // Para existentes, o init() irá popular corretamente.
+                    ))
+                }
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Failed to sign in (Firebase Auth user is null)."))
@@ -165,17 +165,17 @@ class FirebaseAuthRepositoryImpl(
     }
 }
 
-// Modificar FirebaseUser.toDomainUser para aceitar username_lowercase
 private fun FirebaseUser.toDomainUser(
     usernameFromFirestore: String?,
-    usernameLowercaseFromFirestore: String? // NOVO PARÂMETRO
+    usernameLowercaseFromFirestore: String?,
+    profilePictureUrlFromFirestore: String?
 ): com.marcos.chatapplication.domain.model.User {
     return com.marcos.chatapplication.domain.model.User(
         uid = this.uid,
         username = usernameFromFirestore,
-        username_lowercase = usernameLowercaseFromFirestore, // ATRIBUIR AO CAMPO
-        phone = this.phoneNumber
-        // O campo 'email' não está presente no FirebaseUser por padrão com Phone Auth,
-        // então ele continuará null a menos que você o adicione de outra forma.
+        username_lowercase = usernameLowercaseFromFirestore,
+        profilePictureUrl = profilePictureUrlFromFirestore,
+        phone = this.phoneNumber,
+        email = this.email
     )
 }

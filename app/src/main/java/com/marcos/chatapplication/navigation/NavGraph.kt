@@ -1,6 +1,5 @@
 package com.marcos.chatapplication.navigation
 
-import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -86,20 +85,29 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
         }
 
         composable(route = Screen.Profile.route) {
+
             ProfileScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 },
                 onSignOut = {
+                    navController.navigate(Screen.Login.route) {
+
+                        popUpTo(navController.graph.startDestinationId) {
+                            inclusive = true
+                        }
+
+                        launchSingleTop = true
+                    }
                 }
             )
         }
 
-        // NOVO COMPOSABLE
         composable(
             route = Screen.Chat.route,
             arguments = listOf(navArgument("conversationId") { type = NavType.StringType })
         ) {
+
             ChatScreen(
                 onNavigateBack = {
                     navController.popBackStack()
@@ -108,6 +116,7 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
         }
 
         composable(route = Screen.Home.route) {
+
             HomeScreen(
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                 onConversationClick = { conversationId ->
@@ -120,10 +129,10 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
         }
 
         composable(route = Screen.UserSearch.route) {
+
             UserSearchScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToChat = { conversationId ->
-                    // Navega para a tela de chat, limpando a tela de busca da pilha
                     navController.navigate(Screen.Chat.createRoute(conversationId)) {
                         popUpTo(Screen.UserSearch.route) {
                             inclusive = true
@@ -132,6 +141,5 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
                 }
             )
         }
-
     }
 }

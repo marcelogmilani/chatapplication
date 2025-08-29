@@ -14,66 +14,63 @@ import dagger.hilt.android.HiltAndroidApp
 class ChatApplication : Application() {
 
     companion object {
-        private const val TAG = "ChatApplication" // Mantenha esta TAG
+        private const val TAG = "ChatApplication"
     }
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "onCreate: ChatApplication - BuildConfig.DEBUG = ${BuildConfig.DEBUG}") // Log para verificar BuildConfig.DEBUG
+        Log.d(TAG, "onCreate: ChatApplication - BuildConfig.DEBUG = ${BuildConfig.DEBUG}")
 
         try {
-            initializeFirebaseSafely()
+            FirebaseApp.initializeApp(this)
+            Log.d(TAG, "FirebaseApp.initializeApp(this) SUCESSO")
+
+            initializeFirestore()
+
+            initializeAppCheck()
+
         } catch (e: Exception) {
             Log.e(TAG, "Erro GERAL na inicialização do Firebase em onCreate: ${e.message}", e)
         }
+        Log.d(TAG, "onCreate: ChatApplication - FIM da inicialização (com Firestore e AppCheck)")
     }
 
-    private fun initializeFirebaseSafely() {
+    private fun initializeFirestore() {
         try {
-            Log.d(TAG, "initializeFirebaseSafely: INICIO")
-            FirebaseApp.initializeApp(this)
-            Log.d(TAG, "initializeFirebaseSafely: FirebaseApp.initializeApp SUCESSO")
-
             val firestoreSettings = FirebaseFirestoreSettings.Builder()
                 .setPersistenceEnabled(true)
                 .setCacheSizeBytes(FirebaseFirestoreSettings.CACHE_SIZE_UNLIMITED)
                 .build()
+            FirebaseFirestore.getInstance().firestoreSettings = firestoreSettings
+            Log.d(TAG, "Firestore configurado com sucesso")
+        } catch (e: Exception) {
+            Log.e(TAG, "Erro ao configurar Firestore: ${e.message}", e)
+        }
+    }
 
-            try {
-                FirebaseFirestore.getInstance().firestoreSettings = firestoreSettings
-                Log.d(TAG, "initializeFirebaseSafely: Firestore configurado com sucesso")
-            } catch (e: Exception) {
-                Log.e(TAG, "initializeFirebaseSafely: Erro ao configurar Firestore: ${e.message}", e)
-            }
 
-            Log.d(TAG, "initializeFirebaseSafely: Configurando App Check...")
-            try {
-                val firebaseAppCheck = FirebaseAppCheck.getInstance()
-                Log.d(TAG, "initializeFirebaseSafely: FirebaseAppCheck.getInstance() SUCESSO. Instância: $firebaseAppCheck")
+    private fun initializeAppCheck() {
+        try {
+            Log.d(TAG, "Configurando App Check...")
+            val firebaseAppCheck = FirebaseAppCheck.getInstance()
+            Log.d(TAG, "FirebaseAppCheck.getInstance() SUCESSO. Instância: $firebaseAppCheck")
 
-                if (BuildConfig.DEBUG) {
-                    Log.d(TAG, "initializeFirebaseSafely: MODO DEBUG DETECTADO (BuildConfig.DEBUG == true)")
-                    Log.d(TAG, "initializeFirebaseSafely: Tentando instalar DebugAppCheckProviderFactory...")
-                    firebaseAppCheck.installAppCheckProviderFactory(
-                        DebugAppCheckProviderFactory.getInstance()
-                    )
-                    Log.d(TAG, "initializeFirebaseSafely: installAppCheckProviderFactory(Debug) CHAMADO.")
-                    Log.d(TAG, "initializeFirebaseSafely: App Check configurado em modo DEBUG")
-                } else {
-                    Log.d(TAG, "initializeFirebaseSafely: MODO PRODUÇÃO DETECTADO (BuildConfig.DEBUG == false)")
-                    Log.d(TAG, "initializeFirebaseSafely: Tentando instalar PlayIntegrityAppCheckProviderFactory...")
-                    firebaseAppCheck.installAppCheckProviderFactory(
-                        PlayIntegrityAppCheckProviderFactory.getInstance()
-                    )
-                    Log.d(TAG, "initializeFirebaseSafely: installAppCheckProviderFactory(PlayIntegrity) CHAMADO.")
-                    Log.d(TAG, "initializeFirebaseSafely: App Check configurado em modo PRODUÇÃO")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "initializeFirebaseSafely: Erro CRÍTICO ao configurar o App Check: ${e.message}", e)
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "MODO DEBUG DETECTADO (BuildConfig.DEBUG == true)")
+                firebaseAppCheck.installAppCheckProviderFactory(
+                    DebugAppCheckProviderFactory.getInstance()
+                )
+                Log.d(TAG, "App Check configurado em modo DEBUG")
+            } else {
+                Log.d(TAG, "MODO PRODUÇÃO DETECTADO (BuildConfig.DEBUG == false)")
+                firebaseAppCheck.installAppCheckProviderFactory(
+                    PlayIntegrityAppCheckProviderFactory.getInstance()
+                )
+                Log.d(TAG, "App Check configurado em modo PRODUÇÃO")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "initializeFirebaseSafely: Erro CRÍTICO GERAL na inicialização do Firebase: ${e.message}", e)
+            Log.e(TAG, "Erro CRÍTICO ao configurar o App Check: ${e.message}", e)
         }
-        Log.d(TAG, "initializeFirebaseSafely: FIM")
     }
 }
+

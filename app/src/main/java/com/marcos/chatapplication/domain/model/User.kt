@@ -5,5 +5,6 @@ data class User(
     val email: String? = null,
     val phone: String? = null,
     val username: String? = null,
-    val username_lowercase: String? = null // NOVO CAMPO ADICIONADO
+    val username_lowercase: String? = null,
+    val profilePictureUrl: String? = null
 )

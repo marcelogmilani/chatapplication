@@ -2,6 +2,7 @@ package com.marcos.chatapplication.di
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage // IMPORTAR FirebaseStorage
 import com.marcos.chatapplication.data.repository.authentication.FirebaseAuthRepositoryImpl
 import com.marcos.chatapplication.domain.contracts.AuthRepository
 import dagger.Module
@@ -24,9 +25,14 @@ object AuthModule {
 
     @Provides
     @Singleton
+    fun provideFirebaseStorage(): FirebaseStorage = FirebaseStorage.getInstance() // ADICIONAR ESTA FUNÇÃO
+
+    @Provides
+    @Singleton
     fun provideAuthRepository(
         firebaseAuth: FirebaseAuth,
         firestore: FirebaseFirestore
+
     ): AuthRepository {
         return FirebaseAuthRepositoryImpl(firebaseAuth, firestore)
     }
