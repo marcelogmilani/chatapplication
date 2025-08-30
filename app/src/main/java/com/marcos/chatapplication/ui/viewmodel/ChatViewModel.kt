@@ -3,14 +3,18 @@ package com.marcos.chatapplication.ui.viewmodel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import com.marcos.chatapplication.domain.contracts.ChatRepository
 import com.marcos.chatapplication.domain.model.ConversationWithDetails
 import com.marcos.chatapplication.domain.model.Message
+import com.marcos.chatapplication.domain.model.MessageStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -31,7 +35,14 @@ class ChatViewModel @Inject constructor(
     private val conversationId: String = checkNotNull(savedStateHandle["conversationId"])
 
     val uiState: StateFlow<ChatUiState> = combine(
-        chatRepository.getMessages(conversationId),
+        chatRepository.getMessages(conversationId).onEach { messages ->
+            val hasUnreadMessages = messages.any {
+                it.senderId != Firebase.auth.currentUser?.uid && it.status != MessageStatus.READ
+            }
+            if (hasUnreadMessages) {
+                chatRepository.markMessagesAsRead(conversationId)
+            }
+        },
         chatRepository.getConversationDetails(conversationId)
     ) { messages, details ->
         ChatUiState(
@@ -46,12 +57,6 @@ class ChatViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = ChatUiState(isLoading = true)
     )
-
-    fun onChatScreenVisible() {
-        viewModelScope.launch {
-            chatRepository.markMessagesAsRead(conversationId)
-        }
-    }
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
