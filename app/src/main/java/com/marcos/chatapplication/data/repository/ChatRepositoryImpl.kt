@@ -69,21 +69,42 @@ class ChatRepositoryImpl @Inject constructor(
         val currentUserId = firebaseAuth.currentUser?.uid ?: return
 
         try {
+            // Passo 1: Obter a conversa para descobrir quem é o outro participante
+            val conversationDoc = firestore.collection("conversations")
+                .document(conversationId).get().await()
+            val participants = conversationDoc.toObject(Conversation::class.java)?.participants
+            val otherUserId = participants?.firstOrNull { it != currentUserId }
+
+            // Se não houver outro utilizador, não há nada a fazer
+            if (otherUserId == null) {
+                Log.d("ChatRepoImpl", "Outro utilizador não encontrado, não é possível marcar como lido.")
+                return
+            }
+
+            // Passo 2: Buscar apenas as mensagens enviadas pelo OUTRO utilizador
+            // que ainda não foram lidas.
             val messagesToUpdateQuery = firestore.collection("conversations")
                 .document(conversationId)
                 .collection("messages")
-                .whereNotEqualTo("senderId", currentUserId)
-                .whereNotEqualTo("status", MessageStatus.READ)
+                // Condição 1: Mensagens do outro utilizador
+                .whereEqualTo("senderId", otherUserId)
+                // Condição 2: Status diferente de "Lido" (usando 'in' para mais flexibilidade)
+                .whereIn("status", listOf(MessageStatus.SENT, MessageStatus.DELIVERED))
                 .get()
                 .await()
 
-            if (messagesToUpdateQuery.isEmpty) return
+            if (messagesToUpdateQuery.isEmpty) {
+                Log.d("ChatRepoImpl", "Nenhuma mensagem nova para marcar como lida.")
+                return // Nada a atualizar
+            }
 
+            // Cria uma operação em lote (batch) para atualizar todos os documentos de uma só vez
             val batch = firestore.batch()
             for (document in messagesToUpdateQuery.documents) {
                 batch.update(document.reference, "status", MessageStatus.READ)
             }
             batch.commit().await()
+            Log.d("ChatRepoImpl", "${messagesToUpdateQuery.size()} mensagens marcadas como lidas.")
 
         } catch (e: Exception) {
             Log.e("ChatRepoImpl", "Erro ao marcar mensagens como lidas", e)

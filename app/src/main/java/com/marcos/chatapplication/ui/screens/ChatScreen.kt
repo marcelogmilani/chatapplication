@@ -191,7 +191,7 @@ private fun MessageStatusIcon(status: String) {
     }
 
     val iconColor = when (status) {
-        MessageStatus.READ -> MaterialTheme.colorScheme.primary
+        MessageStatus.READ -> Color(0xFF00B0FF)
         else -> Color.Gray
     }
 
