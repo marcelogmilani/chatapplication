@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         applicationId = "com.marcos.chatapplication"
-        minSdk = 33
+        minSdk = 31
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -60,6 +60,7 @@ dependencies {
     implementation(libs.hilt.android)
     implementation(libs.firebase.storage.ktx)
     implementation(libs.firebase.firestore)
+    implementation(libs.androidx.foundation)
     kapt(libs.hilt.compiler)
     implementation(libs.constraintlayout)
     implementation(libs.firebase.auth)
