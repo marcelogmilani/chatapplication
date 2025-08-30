@@ -57,11 +57,6 @@ fun ChatScreen(
         }
     }
 
-
-    LaunchedEffect(Unit) {
-        viewModel.onChatScreenVisible()
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(

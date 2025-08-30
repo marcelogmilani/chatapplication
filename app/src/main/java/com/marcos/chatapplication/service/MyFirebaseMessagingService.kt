@@ -18,23 +18,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
-        Log.d("FCM", "Mensagem recebida de: ${remoteMessage.from}")
-
-        remoteMessage.data.let { data ->
-            val conversationId = data["conversationId"]
-            val messageId = data["messageId"]
-
-            if (!conversationId.isNullOrBlank() && !messageId.isNullOrBlank()) {
-                Log.d("FCM", "Confirmando entrega para a mensagem: $messageId na conversa $conversationId")
-
-                Firebase.firestore
-                    .collection("conversations").document(conversationId)
-                    .collection("messages").document(messageId)
-                    .update("status", MessageStatus.DELIVERED)
-                    .addOnSuccessListener { Log.d("FCM", "Status da mensagem atualizado para DELIVERED no Firestore.") }
-                    .addOnFailureListener { e -> Log.w("FCM", "Erro ao atualizar o status da mensagem.", e) }
-            }
-        }
+        Log.d("FCM", "Notificação de dados recebida para a mensagem: ${remoteMessage.data["messageId"]}")
     }
 
     private fun sendTokenToServer(token: String) {
