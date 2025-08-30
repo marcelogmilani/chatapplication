@@ -64,6 +64,7 @@ class ChatRepositoryImpl @Inject constructor(
         }
     }
 
+
     override suspend fun markMessagesAsRead(conversationId: String) {
         val currentUserId = firebaseAuth.currentUser?.uid ?: return
 

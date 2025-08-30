@@ -1,55 +1,37 @@
 package com.marcos.chatapplication.ui.screens
 
-import android.view.Surface
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavController
+import coil.compose.AsyncImage
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
+import com.marcos.chatapplication.R // Para o placeholder
 import com.marcos.chatapplication.domain.model.Message
 import com.marcos.chatapplication.domain.model.MessageStatus
+import com.marcos.chatapplication.navigation.Screen // Para navegação
 import com.marcos.chatapplication.ui.viewmodel.ChatViewModel
 import com.marcos.chatapplication.util.DateFormatter
 import kotlinx.coroutines.launch
@@ -57,7 +39,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    onNavigateBack: () -> Unit,
+    navController: NavController, // Modificado: onNavigateBack -> navController
     viewModel: ChatViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -65,8 +47,7 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    val otherParticipantUsername = uiState.conversationDetails?.otherParticipant?.username ?: "Carregando..."
-
+    val otherParticipant = uiState.conversationDetails?.otherParticipant
 
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
@@ -76,6 +57,7 @@ fun ChatScreen(
         }
     }
 
+
     LaunchedEffect(Unit) {
         viewModel.onChatScreenVisible()
     }
@@ -83,10 +65,37 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(otherParticipantUsername) },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable(
+                            enabled = otherParticipant?.uid != null && otherParticipant.uid.isNotBlank(),
+                            onClick = {
+                                otherParticipant?.uid?.let { userId ->
+                                    if (userId.isNotBlank()) {
+                                        navController.navigate(Screen.OtherUserProfile.createRoute(userId))
+                                    }
+                                }
+                            }
+                        )
+                    ) {
+                        AsyncImage(
+                            model = otherParticipant?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
+                            contentDescription = "Foto do perfil de ${otherParticipant?.username}",
+                            modifier = Modifier
+                                .size(32.dp) // Tamanho da imagem na TopAppBar
+                                .clip(CircleShape),
+                            contentScale = ContentScale.Crop,
+                            placeholder = painterResource(id = R.drawable.ic_person_placeholder),
+                            error = painterResource(id = R.drawable.ic_person_placeholder)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = otherParticipant?.username ?: "Carregando...")
+                    }
+                },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = { navController.popBackStack() }) { // Modificado para usar navController
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
                 }
             )
@@ -171,6 +180,7 @@ fun MessageBubble(message: Message) {
         }
     }
 }
+
 
 @Composable
 private fun MessageStatusIcon(status: String) {
