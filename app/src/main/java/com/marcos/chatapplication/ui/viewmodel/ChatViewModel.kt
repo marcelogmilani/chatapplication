@@ -47,6 +47,12 @@ class ChatViewModel @Inject constructor(
         initialValue = ChatUiState(isLoading = true)
     )
 
+    fun onChatScreenVisible() {
+        viewModelScope.launch {
+            chatRepository.markMessagesAsRead(conversationId)
+        }
+    }
+
     fun sendMessage(text: String) {
         if (text.isBlank()) return
 

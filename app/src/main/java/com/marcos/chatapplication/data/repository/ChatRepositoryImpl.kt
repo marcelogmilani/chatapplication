@@ -11,6 +11,7 @@ import com.marcos.chatapplication.domain.contracts.ChatRepository
 import com.marcos.chatapplication.domain.model.Conversation
 import com.marcos.chatapplication.domain.model.ConversationWithDetails
 import com.marcos.chatapplication.domain.model.Message
+import com.marcos.chatapplication.domain.model.MessageStatus
 import com.marcos.chatapplication.domain.model.User
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -60,6 +61,32 @@ class ChatRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Log.e("ChatRepoImpl", "Erro ao criar ou obter conversa", e)
             Result.failure(e)
+        }
+    }
+
+
+    override suspend fun markMessagesAsRead(conversationId: String) {
+        val currentUserId = firebaseAuth.currentUser?.uid ?: return
+
+        try {
+            val messagesToUpdateQuery = firestore.collection("conversations")
+                .document(conversationId)
+                .collection("messages")
+                .whereNotEqualTo("senderId", currentUserId)
+                .whereNotEqualTo("status", MessageStatus.READ)
+                .get()
+                .await()
+
+            if (messagesToUpdateQuery.isEmpty) return
+
+            val batch = firestore.batch()
+            for (document in messagesToUpdateQuery.documents) {
+                batch.update(document.reference, "status", MessageStatus.READ)
+            }
+            batch.commit().await()
+
+        } catch (e: Exception) {
+            Log.e("ChatRepoImpl", "Erro ao marcar mensagens como lidas", e)
         }
     }
 

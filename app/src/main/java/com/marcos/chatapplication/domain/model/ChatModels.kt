@@ -15,9 +15,16 @@ data class ConversationWithDetails(
     val otherParticipant: User?
 )
 
+object MessageStatus {
+    const val SENT = "SENT"
+    const val DELIVERED = "DELIVERED"
+    const val READ = "READ"
+}
+
 data class Message(
     val id: String = "",
     val senderId: String = "",
     val text: String = "",
-    @ServerTimestamp val timestamp: Date? = null
+    @ServerTimestamp val timestamp: Date? = null,
+    val status: String = MessageStatus.SENT
 )

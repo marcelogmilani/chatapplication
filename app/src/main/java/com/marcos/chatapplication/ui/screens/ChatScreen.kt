@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +30,7 @@ import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.marcos.chatapplication.R // Para o placeholder
 import com.marcos.chatapplication.domain.model.Message
+import com.marcos.chatapplication.domain.model.MessageStatus
 import com.marcos.chatapplication.navigation.Screen // Para navegação
 import com.marcos.chatapplication.ui.viewmodel.ChatViewModel
 import com.marcos.chatapplication.util.DateFormatter
@@ -52,6 +55,11 @@ fun ChatScreen(
                 listState.animateScrollToItem(uiState.messages.size - 1)
             }
         }
+    }
+
+
+    LaunchedEffect(Unit) {
+        viewModel.onChatScreenVisible()
     }
 
     Scaffold(
@@ -146,21 +154,53 @@ fun MessageBubble(message: Message) {
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.Bottom
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.End
             ) {
                 Text(
                     text = message.text,
                     modifier = Modifier.weight(1f, fill = false)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = DateFormatter.formatMessageTimestamp(message.timestamp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = DateFormatter.formatMessageTimestamp(message.timestamp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                        if (isSentByCurrentUser) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            MessageStatusIcon(status = message.status)
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+
+@Composable
+private fun MessageStatusIcon(status: String) {
+    val icon = when (status) {
+        MessageStatus.READ -> Icons.Default.DoneAll
+        MessageStatus.DELIVERED -> Icons.Default.DoneAll
+        else -> Icons.Default.Done
+    }
+
+    val iconColor = when (status) {
+        MessageStatus.READ -> MaterialTheme.colorScheme.primary
+        else -> Color.Gray
+    }
+
+    Icon(
+        imageVector = icon,
+        contentDescription = "Status da mensagem: $status",
+        tint = iconColor,
+        modifier = Modifier.size(16.dp)
+    )
 }
 
 @Composable
