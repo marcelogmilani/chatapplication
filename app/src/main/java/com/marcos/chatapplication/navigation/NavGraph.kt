@@ -12,6 +12,7 @@ import androidx.navigation.navArgument
 import com.marcos.chatapplication.ui.screens.ChatScreen
 import com.marcos.chatapplication.ui.screens.HomeScreen
 import com.marcos.chatapplication.ui.screens.LoginScreen
+import com.marcos.chatapplication.ui.screens.OtherUserProfileScreen
 import com.marcos.chatapplication.ui.screens.ProfileScreen
 import com.marcos.chatapplication.ui.screens.RegistrationScreen
 import com.marcos.chatapplication.ui.screens.UserSearchScreen
@@ -21,12 +22,17 @@ import com.marcos.chatapplication.ui.viewmodel.RegistrationViewModel
 sealed class Screen(val route: String) {
     object Login : Screen("login_screen")
     object Home : Screen("home_screen")
-    object Profile : Screen("profile_screen")
+    object Profile : Screen("profile_screen") // Seu perfil (logado)
     object Chat : Screen("chat_screen/{conversationId}") {
         fun createRoute(conversationId: String) = "chat_screen/$conversationId"
     }
     object UserSearch : Screen("user_search_screen")
     object Registration : Screen("registration_screen")
+
+
+    object OtherUserProfile : Screen("other_user_profile_screen/{userId}") {
+        fun createRoute(userId: String) = "other_user_profile_screen/$userId"
+    }
 }
 
 @Composable
@@ -85,18 +91,16 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
         }
 
         composable(route = Screen.Profile.route) {
-
+            // Este é o perfil do usuário LOGADO
             ProfileScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 },
                 onSignOut = {
                     navController.navigate(Screen.Login.route) {
-
                         popUpTo(navController.graph.startDestinationId) {
                             inclusive = true
                         }
-
                         launchSingleTop = true
                     }
                 }
@@ -107,18 +111,12 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
             route = Screen.Chat.route,
             arguments = listOf(navArgument("conversationId") { type = NavType.StringType })
         ) {
-
-            ChatScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
-            )
+            ChatScreen(navController = navController)
         }
 
         composable(route = Screen.Home.route) {
-
             HomeScreen(
-                onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                onNavigateToProfile = { navController.navigate(Screen.Profile.route) }, // Perfil do usuário logado
                 onConversationClick = { conversationId ->
                     navController.navigate(Screen.Chat.createRoute(conversationId))
                 },
@@ -129,7 +127,6 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
         }
 
         composable(route = Screen.UserSearch.route) {
-
             UserSearchScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToChat = { conversationId ->
@@ -140,6 +137,16 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
                     }
                 }
             )
+        }
+
+
+        composable(
+            route = Screen.OtherUserProfile.route,
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
+        ) {
+
+
+            OtherUserProfileScreen(navController = navController)
         }
     }
 }
