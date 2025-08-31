@@ -14,6 +14,7 @@ data class Conversation(
     val pinnedMessageSenderId: String? = null,
     val isGroup: Boolean = false,
     val groupName: String? = null,
+    val localName: String? = null
 )
 
 data class ConversationWithDetails(
