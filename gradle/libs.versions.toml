@@ -22,6 +22,7 @@ coreSplashscreen = "1.0.1"
 hiltNavigationCompose = "1.2.0"
 coil = "2.7.0"
 firebaseFirestore = "26.0.0"
+foundation = "1.9.0"
 
 [libraries]
 androidx-hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
@@ -62,6 +63,7 @@ firebase-firestore-ktx = { module = "com.google.firebase:firebase-firestore-ktx"
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 firebase-storage-ktx = { group = "com.google.firebase", name = "firebase-storage-ktx" }
 firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore", version.ref = "firebaseFirestore" }
+androidx-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "foundation" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

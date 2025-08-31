@@ -10,6 +10,7 @@ import com.marcos.chatapplication.domain.model.ConversationWithDetails
 import com.marcos.chatapplication.domain.model.Message
 import com.marcos.chatapplication.domain.model.MessageStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
@@ -23,7 +24,9 @@ data class ChatUiState(
     val messages: List<Message> = emptyList(),
     val isLoading: Boolean = true,
     val conversationDetails: ConversationWithDetails? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val searchQuery: String = "",
+    val filteredMessages: List<Message> = emptyList()
 )
 
 @HiltViewModel
@@ -34,6 +37,8 @@ class ChatViewModel @Inject constructor(
 
     private val conversationId: String = checkNotNull(savedStateHandle["conversationId"])
 
+    private val _searchQuery = MutableStateFlow("")
+
     val uiState: StateFlow<ChatUiState> = combine(
         chatRepository.getMessages(conversationId).onEach { messages ->
             val hasUnreadMessages = messages.any {
@@ -43,12 +48,19 @@ class ChatViewModel @Inject constructor(
                 chatRepository.markMessagesAsRead(conversationId)
             }
         },
-        chatRepository.getConversationDetails(conversationId)
-    ) { messages, details ->
+        chatRepository.getConversationDetails(conversationId),_searchQuery
+    ) { messages, details, query ->
+        val filteredMessages = if (query.isBlank()) {
+            messages
+        } else {
+            messages.filter { it.text.contains(query, ignoreCase = true) }
+        }
         ChatUiState(
             messages = messages,
             conversationDetails = details,
-            isLoading = false
+            isLoading = false,
+            searchQuery = query,
+            filteredMessages = filteredMessages
         )
     }.catch { e ->
         emit(ChatUiState(errorMessage = e.message, isLoading = false))
@@ -63,6 +75,18 @@ class ChatViewModel @Inject constructor(
 
         viewModelScope.launch {
             chatRepository.sendMessage(conversationId, text.trim())
+        }
+    }
+
+    fun onSearchQueryChange(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun onPinMessage(message: Message) {
+        viewModelScope.launch {
+            val currentPinnedId = uiState.value.conversationDetails?.conversation?.pinnedMessageId
+            val messageToPin = if (currentPinnedId == message.id) null else message
+            chatRepository.pinMessage(conversationId, messageToPin)
         }
     }
 }
