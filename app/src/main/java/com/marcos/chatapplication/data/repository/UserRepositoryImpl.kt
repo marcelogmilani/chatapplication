@@ -216,4 +216,23 @@ class UserRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+
+    override suspend fun getAllUsers(): Result<List<User>> {
+        return try {
+            val currentUserId = firebaseAuth.currentUser?.uid
+
+            val snapshot = firestore.collection("users")
+                .get()
+                .await()
+
+            val users = snapshot.toObjects(User::class.java)
+                .filter { user -> user.uid != currentUserId }
+
+            Log.d("UserRepositoryImpl", "getAllUsers: ${users.size} usuários encontrados.")
+            Result.success(users)
+        } catch (e: Exception) {
+            Log.e("UserRepositoryImpl", "Erro ao buscar todos os usuários", e)
+            Result.failure(e)
+        }
+    }
 }

@@ -3,7 +3,6 @@ package com.marcos.chatapplication.ui.viewmodel
 import android.annotation.SuppressLint
 import android.content.Context
 import android.provider.ContactsContract
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
@@ -14,11 +13,7 @@ import com.marcos.chatapplication.domain.model.User
 import com.marcos.chatapplication.ui.screens.Contato
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -36,10 +31,43 @@ class UserSearchViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(UserSearchUiState())
-    val uiState = _uiState.asStateFlow()
+    val uiState: StateFlow<UserSearchUiState> = _uiState.asStateFlow()
 
     private val _navigateToChat = Channel<String>()
     val navigateToChat = _navigateToChat.receiveAsFlow()
+
+    private val _contatos = MutableStateFlow<List<Contato>>(emptyList())
+    val contatos: StateFlow<List<Contato>> = _contatos
+
+    private var todosUsuariosFirebase: List<User> = emptyList()
+
+    fun carregarTodosUsuarios() {
+        viewModelScope.launch {
+            val result = userRepository.getAllUsers()
+            result.onSuccess { users ->
+                todosUsuariosFirebase = users
+                atualizarResultadosCombinados()
+            }
+        }
+    }
+
+    fun onQueryChange(newQuery: String) {
+        _uiState.update { it.copy(query = newQuery) }
+
+        viewModelScope.launch {
+            val result = userRepository.searchUsersByUsername(newQuery)
+            result.onSuccess { firebaseUsers ->
+                val contatosFiltrados = _contatos.value.filter {
+                    it.nome.contains(newQuery, ignoreCase = true)
+                }.map {
+                    User(uid = it.telefone, username = it.nome, profilePictureUrl = null)
+                }
+
+                val combinados = firebaseUsers + contatosFiltrados
+                _uiState.update { it.copy(searchResults = combinados, isLoading = false) }
+            }
+        }
+    }
 
     fun onUserSelected(targetUserId: String) {
         viewModelScope.launch {
@@ -48,33 +76,13 @@ class UserSearchViewModel @Inject constructor(
             result.onSuccess { conversationId ->
                 _uiState.update { it.copy(isLoading = false) }
                 _navigateToChat.send(conversationId)
-            }.onFailure { exception ->
+            }.onFailure {
                 _uiState.update {
                     it.copy(isLoading = false, errorMessage = "Não foi possível iniciar a conversa.")
                 }
             }
         }
     }
-
-    fun onQueryChange(newQuery: String) {
-        _uiState.update { it.copy(query = newQuery) }
-        searchUsers(newQuery)
-    }
-
-    private fun searchUsers(query: String) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            val result = userRepository.searchUsersByUsername(query)
-            result.onSuccess { users ->
-                _uiState.update { it.copy(searchResults = users, isLoading = false) }
-            }.onFailure { exception ->
-                _uiState.update { it.copy(errorMessage = exception.message, isLoading = false) }
-            }
-        }
-    }
-
-    private val _contatos = MutableStateFlow<List<Contato>>(emptyList())
-    val contatos: StateFlow<List<Contato>> = _contatos
 
     @SuppressLint("Range")
     fun lerContatos(context: Context) {
@@ -94,6 +102,15 @@ class UserSearchViewModel @Inject constructor(
 
         _contatos.value = lista
         sincronizarComFirebase(lista)
+        atualizarResultadosCombinados()
+    }
+
+    private fun atualizarResultadosCombinados() {
+        val contatosConvertidos = _contatos.value.map {
+            User(uid = it.telefone, username = it.nome, profilePictureUrl = null)
+        }
+        val combinados = todosUsuariosFirebase + contatosConvertidos
+        _uiState.update { it.copy(searchResults = combinados) }
     }
 
     fun sincronizarComFirebase(contatos: List<Contato>) {
