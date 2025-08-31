@@ -11,4 +11,6 @@ interface ChatRepository {
     suspend fun createOrGetConversation(targetUserId: String): Result<String>
     fun getConversationDetails(conversationId: String): Flow<ConversationWithDetails?>
     suspend fun markMessagesAsRead(conversationId: String)
+
+    suspend fun createGroupConversation(groupName: String, participantIds: List<String>): Result<String>
 }

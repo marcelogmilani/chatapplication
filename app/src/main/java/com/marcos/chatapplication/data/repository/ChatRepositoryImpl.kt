@@ -3,6 +3,7 @@ package com.marcos.chatapplication.data.repository
 import android.util.Log
 import androidx.compose.ui.text.style.TextDecoration.Companion.combine
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -64,6 +65,31 @@ class ChatRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun createGroupConversation(groupName: String, participantIds: List<String>): Result<String> {
+        val currentUserId = firebaseAuth.currentUser?.uid
+        if (currentUserId == null) {
+            return Result.failure(Exception("Utilizador não autenticado."))
+        }
+
+        // Garante que o criador do grupo também está na lista de participantes
+        val allParticipantIds = (participantIds + currentUserId).distinct()
+
+        return try {
+            val newConversation = mapOf(
+                "participants" to allParticipantIds,
+                "isGroup" to true,
+                "groupName" to groupName,
+                "lastMessage" to "Grupo criado.",
+                "lastMessageTimestamp" to FieldValue.serverTimestamp()
+            )
+
+            val newDocRef = firestore.collection("conversations").add(newConversation).await()
+            Result.success(newDocRef.id)
+        } catch (e: Exception) {
+            Log.e("ChatRepoImpl", "Erro ao criar grupo", e)
+            Result.failure(e)
+        }
+    }
 
     override suspend fun markMessagesAsRead(conversationId: String) {
         val currentUserId = firebaseAuth.currentUser?.uid ?: return
@@ -167,72 +193,100 @@ class ChatRepositoryImpl @Inject constructor(
         }
     }
 
-    override fun getUserConversations(): Flow<List<ConversationWithDetails>> = callbackFlow<List<Conversation>> {
-        val currentUserId = firebaseAuth.currentUser?.uid
-        if (currentUserId == null) {
-            trySend(emptyList()).isSuccess
-            close()
-            return@callbackFlow
-        }
+    // Dentro de ChatRepositoryImpl.kt
 
-        val query = firestore.collection("conversations")
-            .whereArrayContains("participants", currentUserId)
-            .orderBy("lastMessageTimestamp", Query.Direction.DESCENDING)
+    override fun getUserConversations(): Flow<List<ConversationWithDetails>> {
+        val currentUserId = firebaseAuth.currentUser?.uid ?: return flowOf(emptyList())
 
-        val listener = query.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                close(error)
-                return@addSnapshotListener
-            }
-            if (snapshot != null) {
-                val conversations = snapshot.documents.mapNotNull { doc ->
-                    doc.toObject(Conversation::class.java)?.copy(id = doc.id)
+        val conversationsFlow: Flow<List<Conversation>> = callbackFlow {
+            val query = firestore.collection("conversations")
+                .whereArrayContains("participants", currentUserId)
+                .orderBy("lastMessageTimestamp", Query.Direction.DESCENDING)
+
+            val listener = query.addSnapshotListener { snapshot, error ->
+                if (error != null) { close(error); return@addSnapshotListener }
+                if (snapshot != null) {
+                    // ALTERAÇÃO AQUI: Usar o mapeamento manual
+                    val convos = snapshot.documents.mapNotNull { doc ->
+                        documentToConversation(doc) // Usando a nossa nova função
+                    }
+                    trySend(convos)
                 }
-                trySend(conversations).isSuccess
             }
-        }
-        awaitClose { listener.remove() }
-    }.flatMapLatest { conversations ->
-        val currentUserId = firebaseAuth.currentUser?.uid ?: ""
-        val userFlows = conversations.map { conversation ->
-            val otherParticipantId = conversation.participants.firstOrNull { it != currentUserId } ?: ""
-            getUserFlow(otherParticipantId).map { user ->
-                ConversationWithDetails(conversation, user)
-            }
+            awaitClose { listener.remove() }
         }
 
-        if (userFlows.isEmpty()) {
-            flowOf(emptyList())
-        } else {
-            combine(userFlows) { details -> details.toList() }
+        // 2. Transforma o fluxo de conversas no fluxo de detalhes
+        return conversationsFlow.flatMapLatest { conversations ->
+            if (conversations.isEmpty()) {
+                return@flatMapLatest flowOf(emptyList())
+            }
+
+            // Mapeia cada conversa para um fluxo de detalhes
+            val detailedFlows = conversations.map { conversation ->
+                if (conversation.isGroup) {
+                    // SE FOR UM GRUPO, o otherParticipant é nulo.
+                    // A UI irá usar o conversation.groupName.
+                    flowOf(ConversationWithDetails(conversation, null))
+                } else {
+                    // SE FOR INDIVIDUAL, encontra o outro utilizador e busca os seus detalhes.
+                    val otherId = conversation.participants.firstOrNull { it != currentUserId } ?: ""
+                    getUserFlow(otherId).map { user ->
+                        ConversationWithDetails(conversation, user)
+                    }
+                }
+            }
+            // Combina todos os fluxos num só
+            combine(detailedFlows) { details -> details.toList() }
+        }
+    }
+
+    private fun documentToConversation(doc: DocumentSnapshot): Conversation? {
+        return try {
+            Conversation(
+                id = doc.id,
+                participants = doc.get("participants") as? List<String> ?: emptyList(),
+                lastMessage = doc.getString("lastMessage"),
+                lastMessageTimestamp = doc.getDate("lastMessageTimestamp"),
+                isGroup = doc.getBoolean("isGroup") ?: false,
+                groupName = doc.getString("groupName")
+            )
+        } catch (e: Exception) {
+            Log.e("ChatRepoImpl", "Erro ao mapear o documento da conversa manualmente", e)
+            null
         }
     }
 
     override fun getConversationDetails(conversationId: String): Flow<ConversationWithDetails?> {
         val currentUserId = firebaseAuth.currentUser?.uid ?: ""
 
-        // 1. Observa o documento da conversa
         return firestore.collection("conversations").document(conversationId)
-            .snapshots() // .snapshots() cria um Flow que emite a cada atualização
+            .snapshots()
             .map { snapshot ->
-                snapshot.toObject(Conversation::class.java)?.copy(id = snapshot.id)
+                // ALTERAÇÃO AQUI: Substituir .toObject() pelo nosso mapeamento manual
+                if (snapshot.exists()) {
+                    documentToConversation(snapshot)
+                } else {
+                    null
+                }
             }
             .flatMapLatest { conversation ->
                 if (conversation == null) {
-                    // Se a conversa for nula (ex: eliminada), emite nulo
                     flowOf(null)
                 } else {
-                    // 2. Encontra o ID do outro participante
-                    val otherId = conversation.participants.firstOrNull { it != currentUserId } ?: ""
-                    // 3. Observa os detalhes do outro utilizador
-                    getUserFlow(otherId).map { user ->
-                        // 4. Combina tudo no nosso modelo de detalhes
-                        ConversationWithDetails(conversation, user)
+                    if (conversation.isGroup) {
+                        // Para grupos, o otherParticipant é nulo
+                        flowOf(ConversationWithDetails(conversation, null))
+                    } else {
+                        // Para chats individuais, busca os detalhes do outro utilizador
+                        val otherId = conversation.participants.firstOrNull { it != currentUserId } ?: ""
+                        getUserFlow(otherId).map { user ->
+                            ConversationWithDetails(conversation, user)
+                        }
                     }
                 }
             }
     }
-
     private fun getUserFlow(userId: String): Flow<User?> = callbackFlow {
         if (userId.isBlank()) {
             trySend(null).isSuccess

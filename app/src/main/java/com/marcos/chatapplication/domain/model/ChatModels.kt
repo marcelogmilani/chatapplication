@@ -7,7 +7,9 @@ data class Conversation(
     val id: String = "",
     val participants: List<String> = emptyList(),
     val lastMessage: String? = null,
-    @ServerTimestamp val lastMessageTimestamp: Date? = null
+    @ServerTimestamp val lastMessageTimestamp: Date? = null,
+    val isGroup: Boolean = false,
+    val groupName: String? = null,
 )
 
 data class ConversationWithDetails(

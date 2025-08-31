@@ -1,5 +1,6 @@
 package com.marcos.chatapplication.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +33,7 @@ import com.google.firebase.auth.auth
 import com.marcos.chatapplication.R // Para o placeholder
 import com.marcos.chatapplication.domain.model.Message
 import com.marcos.chatapplication.domain.model.MessageStatus
+import com.marcos.chatapplication.domain.model.User
 import com.marcos.chatapplication.navigation.Screen // Para navegação
 import com.marcos.chatapplication.ui.viewmodel.ChatViewModel
 import com.marcos.chatapplication.util.DateFormatter
@@ -39,13 +42,16 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    navController: NavController, // Modificado: onNavigateBack -> navController
+    navController: NavController,
     viewModel: ChatViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+
+    val conversationDetails = uiState.conversationDetails
+    val conversation = conversationDetails?.conversation
 
     val otherParticipant = uiState.conversationDetails?.otherParticipant
 
@@ -64,7 +70,7 @@ fun ChatScreen(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.clickable(
-                            enabled = otherParticipant?.uid != null && otherParticipant.uid.isNotBlank(),
+                            enabled = conversation?.isGroup == false,
                             onClick = {
                                 otherParticipant?.uid?.let { userId ->
                                     if (userId.isNotBlank()) {
@@ -74,18 +80,30 @@ fun ChatScreen(
                             }
                         )
                     ) {
-                        AsyncImage(
-                            model = otherParticipant?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
-                            contentDescription = "Foto do perfil de ${otherParticipant?.username}",
-                            modifier = Modifier
-                                .size(32.dp) // Tamanho da imagem na TopAppBar
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop,
-                            placeholder = painterResource(id = R.drawable.ic_person_placeholder),
-                            error = painterResource(id = R.drawable.ic_person_placeholder)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = otherParticipant?.username ?: "Carregando...")
+                        if (conversation?.isGroup == true) {
+                            Icon(
+                                imageVector = Icons.Default.Group,
+                                contentDescription = "Ícone do Grupo",
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = conversation.groupName ?: "Grupo")
+                        } else {
+                            AsyncImage(
+                                model = otherParticipant?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
+                                contentDescription = "Foto do perfil de ${otherParticipant?.username}",
+                                modifier = Modifier
+                                    .size(32.dp) // Tamanho da imagem na TopAppBar
+                                    .clip(CircleShape),
+                                contentScale = ContentScale.Crop,
+                                placeholder = painterResource(id = R.drawable.ic_person_placeholder),
+                                error = painterResource(id = R.drawable.ic_person_placeholder)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = otherParticipant?.username ?: "Carregando...")
+                        }
                     }
                 },
                 navigationIcon = {
@@ -115,59 +133,97 @@ fun ChatScreen(
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
             items(uiState.messages) { message ->
-                MessageBubble(message = message)
+                val sender = uiState.participantsDetails[message.senderId]
+                MessageBubble(
+                    message = message,
+                    sender = sender,
+                    isGroupChat = uiState.conversationDetails?.conversation?.isGroup == true
+                )
             }
         }
     }
 }
 
 @Composable
-fun MessageBubble(message: Message) {
+fun MessageBubble(
+    message: Message,
+    sender: User?, // Modificado de senderName: String? para User?
+    isGroupChat: Boolean
+) {
+
     val currentUserId = Firebase.auth.currentUser?.uid
     val isSentByCurrentUser = message.senderId == currentUserId
 
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        contentAlignment = if (isSentByCurrentUser) Alignment.CenterEnd else Alignment.CenterStart
+        horizontalArrangement = if (isSentByCurrentUser) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Bottom
     ) {
-        Box(
-            modifier = Modifier
-                .clip(
-                    RoundedCornerShape(
-                        topStart = 16.dp,
-                        topEnd = 16.dp,
-                        bottomStart = if (isSentByCurrentUser) 16.dp else 0.dp,
-                        bottomEnd = if (isSentByCurrentUser) 0.dp else 16.dp
-                    )
-                )
-                .background(
-                    if (isSentByCurrentUser) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.secondaryContainer
-                )
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.End
-            ) {
-                Text(
-                    text = message.text,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
 
-                Column(horizontalAlignment = Alignment.End) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = DateFormatter.formatMessageTimestamp(message.timestamp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        if (isGroupChat && !isSentByCurrentUser) {
+            AsyncImage(
+                model = sender?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
+                contentDescription = "Foto do perfil de ${sender?.username}",
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape),
+                contentScale = ContentScale.Crop,
+                placeholder = painterResource(id = R.drawable.ic_person_placeholder),
+                error = painterResource(id = R.drawable.ic_person_placeholder)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        Column(
+            horizontalAlignment = if (isSentByCurrentUser) Alignment.End else Alignment.Start
+        ) {
+            if (isGroupChat && !isSentByCurrentUser && sender != null) {
+                Text(
+                    text = sender.username ?: "Utilizador",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 12.dp, bottom = 4.dp)
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(
+                        RoundedCornerShape(
+                            topStart = if (isSentByCurrentUser) 16.dp else 0.dp,
+                            topEnd = if (isSentByCurrentUser) 0.dp else 16.dp,
+                            bottomStart = 16.dp,
+                            bottomEnd = 16.dp
                         )
-                        if (isSentByCurrentUser) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            MessageStatusIcon(status = message.status)
+                    )
+                    .background(
+                        if (isSentByCurrentUser) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.secondaryContainer
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text(
+                        text = message.text,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(horizontalAlignment = Alignment.End) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = DateFormatter.formatMessageTimestamp(message.timestamp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                            if (isSentByCurrentUser) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                MessageStatusIcon(status = message.status)
+                            }
                         }
                     }
                 }
@@ -175,7 +231,6 @@ fun MessageBubble(message: Message) {
         }
     }
 }
-
 
 @Composable
 private fun MessageStatusIcon(status: String) {
