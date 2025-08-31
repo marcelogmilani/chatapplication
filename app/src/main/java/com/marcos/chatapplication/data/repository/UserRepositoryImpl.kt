@@ -113,26 +113,19 @@ class UserRepositoryImpl @Inject constructor(
     override fun getContacts(): Flow<List<User>> {
         val currentUserId = firebaseAuth.currentUser?.uid ?: return flowOf(emptyList())
 
-        // 1. Observa o documento do utilizador atual para obter a lista de IDs de contacto
+
         return firestore.collection("users").document(currentUserId)
-            .snapshots() // .snapshots() cria um Flow que emite a cada atualização do documento
+            .snapshots()
             .map { snapshot ->
-                // Obtém a lista de UIDs do campo 'contacts'. Se o campo não existir, retorna uma lista vazia.
                 snapshot.get("contacts") as? List<String> ?: emptyList()
             }
             .flatMapLatest { contactIds ->
-                // flatMapLatest é usado para transformar a lista de IDs num Flow de objetos User.
-                // Ele cancela a busca anterior se a lista de contactIds mudar.
-
-                // 2. Se a lista de IDs não estiver vazia, busca os documentos completos desses utilizadores
                 if (contactIds.isNotEmpty()) {
                     firestore.collection("users")
-                        // whereIn busca todos os documentos cujo ID esteja na lista de contactIds
                         .whereIn(FieldPath.documentId(), contactIds)
                         .snapshots()
                         .map { querySnapshot -> querySnapshot.toObjects(User::class.java) }
                 } else {
-                    // Se o utilizador não tiver contactos, emite uma lista vazia imediatamente
                     flowOf(emptyList())
                 }
             }
@@ -179,5 +172,48 @@ class UserRepositoryImpl @Inject constructor(
                 .await()
             Result.success(Unit)
         } catch (e: Exception) { Result.failure(e) }
+    }
+
+    override suspend fun updateUserProfile(userId: String, newUsername: String?, newEmail: String?, newBirthDate: String?): Result<Unit> {
+        if (userId.isBlank()) {
+            return Result.failure(IllegalArgumentException("User ID cannot be blank."))
+        }
+
+        return try {
+            val updatesMap = mutableMapOf<String, Any?>()
+
+            newUsername?.let {
+                if (it.isNotBlank()) {
+                    updatesMap["username"] = it
+                    updatesMap["username_lowercase"] = it.lowercase()
+                } else {
+                    // Tratar caso de username em branco se necessário, ou validar antes no ViewModel
+                }
+            }
+
+            newEmail?.let {
+
+                updatesMap["email"] = it
+            }
+
+            newBirthDate?.let {
+
+                updatesMap["birthDate"] = it
+            }
+
+            if (updatesMap.isEmpty()) {
+                return Result.success(Unit)
+            }
+
+            firestore.collection("users").document(userId)
+                .update(updatesMap)
+                .await()
+
+            Log.d("UserRepositoryImpl", "User profile updated successfully for userId: $userId")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("UserRepositoryImpl", "Error updating user profile for userId: $userId", e)
+            Result.failure(e)
+        }
     }
 }

@@ -8,8 +8,9 @@ data class Conversation(
     val participants: List<String> = emptyList(),
     val lastMessage: String? = null,
     @ServerTimestamp val lastMessageTimestamp: Date? = null,
-    val isGroup: Boolean = false,
-    val groupName: String? = null,
+    val pinnedMessageId: String? = null,
+    val pinnedMessageText: String? = null,
+    val pinnedMessageSenderId: String? = null
 )
 
 data class ConversationWithDetails(

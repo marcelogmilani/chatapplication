@@ -69,7 +69,7 @@ fun OtherUserProfileScreen(
                     val user = uiState.user!!
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp) // Mantém o espaçamento geral
                     ) {
                         AsyncImage(
                             model = user.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder } ?: R.drawable.ic_person_placeholder,
@@ -93,6 +93,13 @@ fun OtherUserProfileScreen(
                             fontSize = 16.sp
                         )
 
+                        // ADICIONADO: Exibição da Data de Nascimento
+                        if (!user.birthDate.isNullOrBlank()) {
+                            Text(
+                                text = "Nascimento: ${user.birthDate}",
+                                fontSize = 16.sp // Mesmo tamanho do email para consistência
+                            )
+                        }
                     }
                 }
                 else -> {

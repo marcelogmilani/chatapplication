@@ -1,8 +1,12 @@
 package com.marcos.chatapplication.ui.screens
 
 import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,9 +16,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +30,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,11 +58,12 @@ fun ChatScreen(
     var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    var isSearchVisible by remember { mutableStateOf(false) }
 
     val conversationDetails = uiState.conversationDetails
-    val conversation = conversationDetails?.conversation
-
+    val conversation = uiState.conversationDetails?.conversation
     val otherParticipant = uiState.conversationDetails?.otherParticipant
+    val pinnedMessageId = conversation?.pinnedMessageId
 
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
@@ -63,8 +73,32 @@ fun ChatScreen(
         }
     }
 
+    LaunchedEffect(uiState.filteredMessages.size) {
+        if (uiState.filteredMessages.isNotEmpty() && uiState.searchQuery.isBlank()) {
+            coroutineScope.launch {
+                listState.animateScrollToItem(uiState.filteredMessages.size - 1)
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
+            if (isSearchVisible) {
+                SearchBar(
+                    query = uiState.searchQuery,
+                    onQueryChange = viewModel::onSearchQueryChange,
+                    onClose = {
+                        isSearchVisible = false
+                        viewModel.onSearchQueryChange("")
+                    }
+                )
+            } else {
+                ChatTopAppBar(
+                    navController = navController,
+                    otherParticipant = otherParticipant,
+                    onSearchClick = { isSearchVisible = true }
+                )
+            }
             TopAppBar(
                 title = {
                     Row(
@@ -133,12 +167,7 @@ fun ChatScreen(
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
             items(uiState.messages) { message ->
-                val sender = uiState.participantsDetails[message.senderId]
-                MessageBubble(
-                    message = message,
-                    sender = sender,
-                    isGroupChat = uiState.conversationDetails?.conversation?.isGroup == true
-                )
+                MessageBubble(message = message)
             }
         }
     }
@@ -148,11 +177,21 @@ fun ChatScreen(
 fun MessageBubble(
     message: Message,
     sender: User?, // Modificado de senderName: String? para User?
-    isGroupChat: Boolean
+    isGroupChat: Boolean,
+    isPinned: Boolean,
+    onLongPress: () -> Unit
 ) {
 
     val currentUserId = Firebase.auth.currentUser?.uid
     val isSentByCurrentUser = message.senderId == currentUserId
+
+    val bubbleColor = if (isPinned) {
+        MaterialTheme.colorScheme.tertiaryContainer
+    } else if (isSentByCurrentUser) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer
+    }
 
     Row(
         modifier = Modifier
@@ -208,6 +247,15 @@ fun MessageBubble(
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.End
                 ) {
+                    if (isPinned) {
+                        Icon(
+                            Icons.Default.PushPin,
+                            contentDescription = "Fixada",
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
                     Text(
                         text = message.text,
                         modifier = Modifier.weight(1f, fill = false)
@@ -231,6 +279,7 @@ fun MessageBubble(
         }
     }
 }
+
 
 @Composable
 private fun MessageStatusIcon(status: String) {

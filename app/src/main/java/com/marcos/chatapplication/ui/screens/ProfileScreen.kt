@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,23 +18,32 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.DateRange // Import DateRange icon
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton // Import TextButton for dialog
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState // Import rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,6 +63,8 @@ import coil.compose.AsyncImage
 import com.marcos.chatapplication.R
 import com.marcos.chatapplication.ui.viewmodel.ProfileViewModel
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat // Import SimpleDateFormat
+import java.util.Locale // Import Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,6 +76,7 @@ fun ProfileScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
 
     val pickMediaLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -74,11 +87,67 @@ fun ProfileScreen(
         }
     )
 
+    // DatePicker State and initial value calculation
+    val initialDateMillis = remember(uiState.editableBirthDate) {
+        if (uiState.editableBirthDate.isNotBlank()) {
+            try {
+                SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).parse(uiState.editableBirthDate)?.time
+            } catch (e: Exception) {
+                // Log.e("ProfileScreen", "Error parsing initial date: ${uiState.editableBirthDate}", e)
+                null // Fallback to null if parsing fails
+            }
+        } else {
+            null
+        }
+    }
+    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialDateMillis)
+
+
+    if (uiState.showDatePickerDialog) {
+        DatePickerDialog(
+            onDismissRequest = { viewModel.onDatePickerDialogDismissed() },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.onBirthDateSelected(datePickerState.selectedDateMillis)
+                    // viewModel.onDatePickerDialogDismissed() // onBirthDateSelected já chama dismiss
+                }) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.onDatePickerDialogDismissed() }) {
+                    Text("Cancelar")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+
     LaunchedEffect(uiState.profileUploadError) {
         uiState.profileUploadError?.let { error ->
             scope.launch {
                 snackbarHostState.showSnackbar(message = error)
                 viewModel.clearProfileUploadError()
+            }
+        }
+    }
+
+    LaunchedEffect(uiState.profileSaveSuccessMessage) {
+        uiState.profileSaveSuccessMessage?.let { message ->
+            scope.launch {
+                snackbarHostState.showSnackbar(message = message)
+                viewModel.clearProfileSaveSuccessMessage()
+            }
+        }
+    }
+
+    LaunchedEffect(uiState.profileSaveErrorMessage) {
+        uiState.profileSaveErrorMessage?.let { error ->
+            scope.launch {
+                snackbarHostState.showSnackbar(message = error)
+                viewModel.clearProfileSaveErrorMessage()
             }
         }
     }
@@ -100,18 +169,18 @@ fun ProfileScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
+                .padding(horizontal = 16.dp)
+                .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Spacer(modifier = Modifier.height(16.dp))
 
-            if (uiState.isLoadingUser || uiState.isUploadingProfilePicture) {
-
-                Spacer(Modifier.weight(1f))
-                CircularProgressIndicator(modifier = Modifier.size(60.dp))
-                Spacer(Modifier.weight(1f))
+            if (uiState.isLoadingUser) {
+                Box(modifier = Modifier.fillMaxSize().padding(bottom = 100.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(60.dp))
+                }
             } else {
                 uiState.user?.let { currentUser ->
-
                     Box(contentAlignment = Alignment.BottomEnd) {
                         AsyncImage(
                             model = currentUser.profilePictureUrl ?: R.drawable.ic_person_placeholder,
@@ -121,7 +190,7 @@ fun ProfileScreen(
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
                                 .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                                .clickable {
+                                .clickable(enabled = !uiState.isUploadingProfilePicture) {
                                     pickMediaLauncher.launch(
                                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                     )
@@ -130,49 +199,113 @@ fun ProfileScreen(
                             placeholder = painterResource(id = R.drawable.ic_person_placeholder),
                             error = painterResource(id = R.drawable.ic_person_placeholder)
                         )
-                        IconButton(
-                            onClick = {
-                                pickMediaLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer)
-                        ) {
-                            Icon(
-                                Icons.Filled.Edit,
-                                contentDescription = "Edit profile picture",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        if (uiState.isUploadingProfilePicture) {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .align(Alignment.Center)
                             )
+                        } else {
+                            IconButton(
+                                onClick = {
+                                    pickMediaLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Edit,
+                                    contentDescription = "Edit profile picture",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    Text(
-                        text = currentUser.username ?: "No Username",
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold
+                    OutlinedTextField(
+                        value = uiState.editableUsername,
+                        onValueChange = viewModel::onUsernameChanged,
+                        label = { Text("Nome de Usuário") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !uiState.isSavingProfile
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = uiState.editableEmail,
+                        onValueChange = viewModel::onEmailChanged,
+                        label = { Text("E-mail") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !uiState.isSavingProfile
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = uiState.editableBirthDate,
+                        onValueChange = viewModel::onBirthDateTextChanged, // Permite edição via ViewModel, mas campo é readOnly
+                        label = { Text("Data de Nascimento") }, // Removido (DD/MM/AAAA) para não poluir
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null, // No visual ripple for the text field itself
+                                onClick = viewModel::onBirthDateClicked
+                            ),
+                        singleLine = true,
+                        enabled = !uiState.isSavingProfile,
+                        readOnly = true, // Campo de texto não editável diretamente
+                        trailingIcon = {
+                            Icon(
+                                Icons.Filled.DateRange,
+                                contentDescription = "Selecionar data",
+                                modifier = Modifier.clickable(onClick = viewModel::onBirthDateClicked) // Icon também clicável
+                            )
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     Text(
-                        text = currentUser.phone ?: "No Phone Number",
+                        text = "Telefone: ${currentUser.phone ?: "Não informado"}",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color.Gray
+                        color = Color.Gray,
+                        modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.weight(1f)) // Empurra o botão de Sign Out para baixo
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    if (uiState.isSavingProfile) {
+                        CircularProgressIndicator()
+                    } else {
+                        Button(
+                            onClick = { viewModel.saveProfile() },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !uiState.isLoadingUser // Habilitado mesmo se estiver editando, mas não carregando
+                        ) {
+                            Icon(Icons.Filled.Save, contentDescription = "Save Icon")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Salvar Alterações")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                 } ?: run {
-                    Spacer(Modifier.weight(1f))
-                    Text("Nenhum usuário logado ou falha ao carregar o perfil.")
-                    Spacer(Modifier.weight(1f))
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Nenhum usuário logado ou falha ao carregar o perfil.")
+                    }
                 }
             }
 
             if (!uiState.isLoadingUser) {
+                Spacer(modifier = Modifier.weight(1f))
                 Button(
                     onClick = {
                         viewModel.signOut()
@@ -181,7 +314,8 @@ fun ProfileScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp, bottom = 32.dp) // Adiciona padding para não colar no conteúdo acima ou na borda
+                        .padding(bottom = 16.dp),
+                    enabled = !uiState.isSavingProfile && !uiState.isUploadingProfilePicture
                 ) {
                     Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Sign Out Icon")
                     Spacer(modifier = Modifier.width(8.dp))
@@ -191,3 +325,4 @@ fun ProfileScreen(
         }
     }
 }
+

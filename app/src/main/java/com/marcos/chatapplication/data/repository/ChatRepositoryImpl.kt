@@ -279,4 +279,30 @@ class ChatRepositoryImpl @Inject constructor(
         }
         awaitClose { listener.remove() }
     }
+
+    override suspend fun pinMessage(conversationId: String, message: Message?): Result<Unit> {
+        return try {
+            val conversationRef = firestore.collection("conversations").document(conversationId)
+            val updates = if (message != null) {
+                // Fixa a mensagem
+                mapOf(
+                    "pinnedMessageId" to message.id,
+                    "pinnedMessageText" to message.text,
+                    "pinnedMessageSenderId" to message.senderId
+                )
+            } else {
+                // Desafixa a mensagem
+                mapOf(
+                    "pinnedMessageId" to FieldValue.delete(),
+                    "pinnedMessageText" to FieldValue.delete(),
+                    "pinnedMessageSenderId" to FieldValue.delete()
+                )
+            }
+            conversationRef.update(updates).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("ChatRepoImpl", "Error pinning message", e)
+            Result.failure(e)
+        }
+    }
 }

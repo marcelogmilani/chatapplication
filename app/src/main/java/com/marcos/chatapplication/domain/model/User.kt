@@ -8,5 +8,6 @@ data class User(
     val username_lowercase: String? = null,
     val profilePictureUrl: String? = null,
     val fcmToken: String? = null,
+    val birthDate: String? = null,
     val contacts: List<String> = emptyList()
 )

@@ -13,4 +13,5 @@ interface ChatRepository {
     suspend fun markMessagesAsRead(conversationId: String)
 
     suspend fun createGroupConversation(groupName: String, participantIds: List<String>): Result<String>
+    suspend fun pinMessage(conversationId: String, message: Message?): Result<Unit>
 }
