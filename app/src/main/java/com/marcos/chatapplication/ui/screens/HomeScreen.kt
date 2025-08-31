@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -102,39 +103,51 @@ fun ConversationItem(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Adiciona a imagem do perfil aqui
-        AsyncImage(
-            model = otherUser?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
-            contentDescription = "Foto do perfil de ${otherUser?.username}",
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape),
-            contentScale = ContentScale.Crop,
-            placeholder = painterResource(id = R.drawable.ic_person_placeholder),
-            error = painterResource(id = R.drawable.ic_person_placeholder)
-        )
+        // NOVO: Adiciona um ícone para distinguir visualmente os grupos
+        if (conversation.isGroup) {
+            Icon(
+                imageVector = Icons.Default.Group,
+                contentDescription = "Grupo",
+                modifier = Modifier.padding(end = 16.dp),
+                tint = Color.Gray
+            )
+        } else {
+            AsyncImage(
+                model = otherUser?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
+                contentDescription = "Foto do perfil de ${otherUser?.username}",
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape),
+                contentScale = ContentScale.Crop,
+                placeholder = painterResource(id = R.drawable.ic_person_placeholder),
+                error = painterResource(id = R.drawable.ic_person_placeholder)
+            )
 
-        Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(16.dp))
+        }
 
         Column(modifier = Modifier.weight(1f)) {
+            // LÓGICA ATUALIZADA PARA O NOME
             Text(
-                text = otherUser?.username ?: "Utilizador Desconhecido",
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleMedium
+                text = if (conversation.isGroup) {
+                    conversation.groupName ?: "Grupo sem nome"
+                } else {
+                    otherUser?.username ?: "Utilizador Desconhecido"
+                },
+                fontWeight = FontWeight.Bold
             )
-            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = conversation.lastMessage ?: "Nenhuma mensagem",
                 maxLines = 1,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Color.Gray
             )
         }
         Spacer(modifier = Modifier.width(16.dp))
         Text(
             text = DateFormatter.formatConversationTimestamp(conversation.lastMessageTimestamp),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = Color.Gray
         )
     }
 }
