@@ -1,5 +1,6 @@
 package com.marcos.chatapplication.domain.contracts
 
+import android.net.Uri // NOVO IMPORT
 import com.marcos.chatapplication.domain.model.ConversationWithDetails
 import com.marcos.chatapplication.domain.model.Message
 import kotlinx.coroutines.flow.Flow
@@ -14,4 +15,7 @@ interface ChatRepository {
 
     suspend fun createGroupConversation(groupName: String, participantIds: List<String>): Result<String>
     suspend fun pinMessage(conversationId: String, message: Message?): Result<Unit>
+
+    // NOVA FUNÇÃO para enviar mensagens de imagem
+    suspend fun sendImageMessage(conversationId: String, imageUri: Uri, caption: String? = null): Result<Unit>
 }

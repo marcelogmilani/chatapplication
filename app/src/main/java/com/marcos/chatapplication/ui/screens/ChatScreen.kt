@@ -1,6 +1,10 @@
 package com.marcos.chatapplication.ui.screens
 
+import android.net.Uri
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -16,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
@@ -24,11 +29,14 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,12 +45,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.marcos.chatapplication.R // Para o placeholder
 import com.marcos.chatapplication.domain.model.Conversation
 import com.marcos.chatapplication.domain.model.Message
 import com.marcos.chatapplication.domain.model.MessageStatus
+import com.marcos.chatapplication.domain.model.MessageType
 import com.marcos.chatapplication.domain.model.User
 import com.marcos.chatapplication.navigation.Screen // Para navegação
 import com.marcos.chatapplication.ui.viewmodel.ChatViewModel
@@ -63,8 +73,24 @@ fun ChatScreen(
 
     val conversation = uiState.conversationDetails?.conversation
     val pinnedMessageId = conversation?.pinnedMessageId
+    val conversationId = conversation?.id
 
-    // Efeito para rolar para o fim da lista com novas mensagens
+    // NOVO: Estado para a URI da imagem em pré-visualização
+    var imageUriForPreview by remember { mutableStateOf<Uri?>(null) }
+
+    // ATUALIZADO: imagePickerLauncher agora define imageUriForPreview
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri: Uri? ->
+            if (uri != null) {
+                Log.d("ChatScreen", "Selected Image URI for preview: $uri")
+                imageUriForPreview = uri // Define a URI para pré-visualização
+            } else {
+                Log.d("ChatScreen", "No image selected for preview.")
+            }
+        }
+    )
+
     LaunchedEffect(uiState.messages.size, uiState.searchQuery) {
         if (uiState.messages.isNotEmpty() && uiState.searchQuery.isBlank()) {
             coroutineScope.launch {
@@ -85,7 +111,6 @@ fun ChatScreen(
                     }
                 )
             } else {
-                // Usando a TopAppBar unificada que sabe lidar com grupos
                 ChatTopAppBar(
                     navController = navController,
                     conversation = conversation,
@@ -95,26 +120,51 @@ fun ChatScreen(
             }
         },
         bottomBar = {
+            // ATUALIZADO: Chamada para MessageInput e lógica de onSendClick
             MessageInput(
                 text = text,
                 onTextChange = { text = it },
                 onSendClick = {
-                    viewModel.sendMessage(text)
-                    text = ""
-                }
+                    val currentPreviewUri = imageUriForPreview
+                    if (currentPreviewUri != null) {
+                        // Se há uma imagem em pré-visualização, envie-a
+                        if (conversationId != null) {
+                            // Enviar imagem (e texto como legenda, se houver)
+                            // O texto será a legenda. Se estiver em branco, passamos null.
+                            viewModel.sendImageMessage(currentPreviewUri, conversationId, text.ifBlank { null })
+                            imageUriForPreview = null // Limpar pré-visualização
+                            text = "" // Limpar campo de texto
+                        } else {
+                            Log.e("ChatScreen", "Conversation ID is null, cannot send image with caption.")
+                            // TODO: Adicionar feedback ao usuário aqui, se desejado (ex: Toast, Snackbar)
+                        }
+                    } else if (text.isNotBlank()) {
+                        // Senão, se houver apenas texto, envie mensagem de texto normal
+                        viewModel.sendMessage(text)
+                        text = ""
+                    }
+                },
+                onAttachmentClick = {
+                    Log.d("ChatScreen", "Attachment button clicked! Launching image picker.")
+                    imagePickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                // NOVOS PARÂMETROS PASSADOS PARA MessageInput
+                previewImageUri = imageUriForPreview,
+                onRemovePreviewImage = { imageUriForPreview = null }
             )
         }
     ) { paddingValues ->
-        Column(modifier = Modifier
-            .fillMaxSize()
-            .padding(paddingValues)) {
-
-            // Barra de Mensagem Fixada
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
             PinnedMessageBar(
                 conversation = conversation,
                 onUnpin = {
-                    val pinnedMessage = uiState.messages.find { it.id == pinnedMessageId }
-                    pinnedMessage?.let { viewModel.onPinMessage(it) }
+                    viewModel.onPinMessage(null)
                 },
                 onClick = {
                     val index = uiState.messages.indexOfFirst { it.id == pinnedMessageId }
@@ -123,8 +173,6 @@ fun ChatScreen(
                     }
                 }
             )
-
-            // Lista de Mensagens
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -132,7 +180,6 @@ fun ChatScreen(
                     .padding(horizontal = 8.dp),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
-                // Itera sobre a lista correta (mensagens ou resultados da busca)
                 val messagesToShow = if (uiState.searchQuery.isNotBlank()) uiState.filteredMessages else uiState.messages
                 items(messagesToShow, key = { it.id }) { message ->
                     val sender = uiState.participantsDetails[message.senderId]
@@ -162,7 +209,7 @@ fun ChatTopAppBar(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clickable(
-                    enabled = conversation?.isGroup == false,
+                    enabled = conversation?.isGroup == false && otherParticipant != null,
                     onClick = {
                         otherParticipant?.uid?.let { userId ->
                             if (userId.isNotBlank()) {
@@ -172,7 +219,6 @@ fun ChatTopAppBar(
                     }
                 )
             ) {
-                // Lógica unificada para mostrar ícone/foto e nome do grupo/utilizador
                 if (conversation?.isGroup == true) {
                     Icon(
                         imageVector = Icons.Default.Group,
@@ -184,7 +230,7 @@ fun ChatTopAppBar(
                 } else {
                     AsyncImage(
                         model = otherParticipant?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
-                        contentDescription = "Foto de ${otherParticipant?.username}",
+                        contentDescription = "Foto de perfil de ${otherParticipant?.username}",
                         modifier = Modifier.size(32.dp).clip(CircleShape),
                         contentScale = ContentScale.Crop,
                         placeholder = painterResource(id = R.drawable.ic_person_placeholder),
@@ -221,7 +267,7 @@ fun MessageBubble(
     val isSentByCurrentUser = message.senderId == currentUserId
 
     val bubbleColor = if (isPinned) {
-        MaterialTheme.colorScheme.tertiaryContainer // Cor para mensagem fixada
+        MaterialTheme.colorScheme.tertiaryContainer
     } else if (isSentByCurrentUser) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
@@ -235,11 +281,10 @@ fun MessageBubble(
         horizontalArrangement = if (isSentByCurrentUser) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Bottom
     ) {
-        // Avatar do remetente (só em grupos e para mensagens recebidas)
         if (isGroupChat && !isSentByCurrentUser) {
             AsyncImage(
                 model = sender?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
-                contentDescription = "Foto de ${sender?.username}",
+                contentDescription = "Foto de perfil de ${sender?.username}",
                 modifier = Modifier.size(32.dp).clip(CircleShape),
                 contentScale = ContentScale.Crop,
                 placeholder = painterResource(id = R.drawable.ic_person_placeholder),
@@ -248,9 +293,7 @@ fun MessageBubble(
             Spacer(modifier = Modifier.width(8.dp))
         }
 
-        // Coluna para nome e balão da mensagem
         Column(horizontalAlignment = if (isSentByCurrentUser) Alignment.End else Alignment.Start) {
-            // Nome do remetente (só em grupos e para mensagens recebidas)
             if (isGroupChat && !isSentByCurrentUser && sender != null) {
                 Text(
                     text = sender.username ?: "Utilizador",
@@ -260,19 +303,18 @@ fun MessageBubble(
                 )
             }
 
-            // O balão da mensagem
             Box(
                 modifier = Modifier
                     .clip(
                         RoundedCornerShape(
-                            topStart = if (isSentByCurrentUser || isGroupChat) 16.dp else 0.dp,
-                            topEnd = if (isSentByCurrentUser) 0.dp else 16.dp,
+                            topStart = if (isSentByCurrentUser || (isGroupChat && !isSentByCurrentUser)) 16.dp else 0.dp,
+                            topEnd = if (!isSentByCurrentUser || (isGroupChat && isSentByCurrentUser)) 16.dp else 0.dp,
                             bottomStart = 16.dp,
                             bottomEnd = 16.dp
                         )
                     )
                     .background(bubbleColor)
-                    .combinedClickable( // Para fixar a mensagem
+                    .combinedClickable(
                         onClick = {},
                         onLongClick = onLongPress,
                         interactionSource = remember { MutableInteractionSource() },
@@ -280,31 +322,81 @@ fun MessageBubble(
                     )
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                // Conteúdo do balão
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = message.text,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isPinned) {
-                            Icon(
-                                Icons.Default.PushPin,
-                                contentDescription = "Fixada",
-                                modifier = Modifier.size(12.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                        }
-                        Text(
-                            text = DateFormatter.formatMessageTimestamp(message.timestamp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                if (message.type == MessageType.IMAGE && message.mediaUrl != null) {
+                    Column {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(message.mediaUrl)
+                                .crossfade(true)
+                                .placeholder(R.drawable.ic_image_placeholder) // CRIE ESTE DRAWABLE
+                                .error(R.drawable.ic_broken_image_placeholder)   // CRIE ESTE DRAWABLE
+                                .build(),
+                            contentDescription = message.fileName ?: "Imagem",
+                            modifier = Modifier
+                                .fillMaxWidth(0.7f)
+                                .aspectRatio(16f / 9f)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
                         )
-                        if (isSentByCurrentUser) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            MessageStatusIcon(status = message.status)
+
+                        val caption = if (!message.text.isNullOrBlank() && message.text != MessageType.IMAGE_LABEL) {
+                            message.text
+                        } else {
+                            null // Não mostrar nada se o texto for o label padrão da imagem ou estiver em branco
+                        }
+
+                        if (caption != null) {
+                            Text(
+                                text = caption,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.End,
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        ) {
+                            if (isPinned) {
+                                Icon(Icons.Default.PushPin, contentDescription = "Mensagem fixada", modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+                            Text(text = DateFormatter.formatMessageTimestamp(message.timestamp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                            if (isSentByCurrentUser) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                MessageStatusIcon(status = message.status)
+                            }
+                        }
+                    }
+                } else {
+
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            text = message.text ?: "",
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isPinned) {
+                                Icon(
+                                    Icons.Default.PushPin,
+                                    contentDescription = "Mensagem fixada",
+                                    modifier = Modifier.size(12.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+                            Text(
+                                text = DateFormatter.formatMessageTimestamp(message.timestamp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                            if (isSentByCurrentUser) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                MessageStatusIcon(status = message.status)
+                            }
                         }
                     }
                 }
@@ -312,6 +404,34 @@ fun MessageBubble(
         }
     }
 }
+
+
+@Composable
+fun MessageStatusIcon(status: String) {
+    val icon = when (status) {
+        MessageStatus.SENT -> Icons.Default.Done
+        MessageStatus.DELIVERED -> Icons.Default.DoneAll
+        MessageStatus.READ -> Icons.Filled.DoneAll
+        else -> null
+    }
+    val contentDesc = when (status) {
+        MessageStatus.SENT -> "Mensagem enviada"
+        MessageStatus.DELIVERED -> "Mensagem entregue"
+        MessageStatus.READ -> "Mensagem lida"
+        else -> "Status da mensagem"
+    }
+    val iconColor = if (status == MessageStatus.READ) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+
+    icon?.let {
+        Icon(
+            imageVector = it,
+            contentDescription = contentDesc,
+            tint = iconColor,
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchBar(
@@ -321,10 +441,13 @@ fun SearchBar(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shadowElevation = 4.dp
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(64.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
@@ -341,9 +464,11 @@ fun SearchBar(
                     disabledContainerColor = Color.Transparent,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
+                    cursorColor = MaterialTheme.colorScheme.primary
                 ),
                 maxLines = 1,
-                singleLine = true
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge
             )
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQueryChange("") }) {
@@ -366,41 +491,42 @@ fun PinnedMessageBar(
     AnimatedVisibility(visible = pinnedMessageText != null) {
         if (pinnedMessageText != null) {
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClick)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
-                onClick = onClick
+                shadowElevation = 2.dp
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        Icons.Default.PushPin,
-                        contentDescription = "Mensagem Fixada",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Mensagem Fixada",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(
+                            Icons.Default.PushPin,
+                            contentDescription = "Mensagem fixada",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = pinnedMessageText,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
-                    IconButton(onClick = onUnpin, modifier = Modifier.size(32.dp)) {
+                    IconButton(onClick = onUnpin, modifier = Modifier.size(24.dp)) {
                         Icon(
                             Icons.Default.Clear,
-                            contentDescription = "Desafixar Mensagem",
-                            modifier = Modifier.size(16.dp)
+                            contentDescription = "Desafixar mensagem",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -410,57 +536,93 @@ fun PinnedMessageBar(
 }
 
 
-
-@Composable
-private fun MessageStatusIcon(status: String) {
-    val icon = when (status) {
-        MessageStatus.READ -> Icons.Default.DoneAll
-        MessageStatus.DELIVERED -> Icons.Default.DoneAll
-        else -> Icons.Default.Done
-    }
-
-    val iconColor = when (status) {
-        MessageStatus.READ -> Color(0xFF00B0FF)
-        else -> Color.Gray
-    }
-
-    Icon(
-        imageVector = icon,
-        contentDescription = "Status da mensagem: $status",
-        tint = iconColor,
-        modifier = Modifier.size(16.dp)
-    )
-}
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MessageInput(
     text: String,
     onTextChange: (String) -> Unit,
-    onSendClick: () -> Unit
+    onSendClick: () -> Unit,
+    onAttachmentClick: () -> Unit,
+    previewImageUri: Uri?,
+    onRemovePreviewImage: () -> Unit
 ) {
-    Surface(shadowElevation = 8.dp) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextField(
-                value = text,
-                onValueChange = onTextChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Digite uma mensagem...") },
-                colors = TextFieldDefaults.colors(
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent
-                )
-            )
-            IconButton(
-                onClick = onSendClick,
-                enabled = text.isNotBlank()
+    Surface(
+        shadowElevation = 8.dp,
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Column { // Envolver em Column para adicionar o preview acima da Row de input
+            // Pré-visualização da Imagem (se houver)
+            if (previewImageUri != null) {
+                Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)) { // Adicionado mais padding
+                    AsyncImage(
+                        model = previewImageUri,
+                        contentDescription = "Pré-visualização da imagem",
+                        modifier = Modifier
+                            .height(100.dp) // Altura da miniatura
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    IconButton( // Botão para remover a pré-visualização
+                        onClick = onRemovePreviewImage,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f), CircleShape) // Cor de fundo semi-transparente
+                    ) {
+                        Icon(
+                            Icons.Default.Clear,
+                            contentDescription = "Remover pré-visualização",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer // Cor do ícone para bom contraste
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp, top = if (previewImageUri != null) 0.dp else 8.dp), // Ajuste de padding
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                IconButton(onClick = onAttachmentClick) {
+                    Icon(
+                        imageVector = Icons.Filled.AttachFile,
+                        contentDescription = "Anexar arquivo"
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                TextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { if (previewImageUri != null) Text("Adicionar legenda...") else Text("Digite uma mensagem...") }, // Placeholder dinâmico
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        cursorColor = MaterialTheme.colorScheme.primary
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    maxLines = 5
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = onSendClick,
+                    // Habilitar se houver texto OU imagem em pré-visualização
+                    enabled = text.isNotBlank() || previewImageUri != null,
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Enviar mensagem"
+                    )
+                }
             }
         }
     }
