@@ -71,7 +71,6 @@ class ChatRepositoryImpl @Inject constructor(
             return Result.failure(Exception("Utilizador não autenticado."))
         }
 
-        // Garante que o criador do grupo também está na lista de participantes
         val allParticipantIds = (participantIds + currentUserId).distinct()
 
         return try {
@@ -95,26 +94,20 @@ class ChatRepositoryImpl @Inject constructor(
         val currentUserId = firebaseAuth.currentUser?.uid ?: return
 
         try {
-            // Passo 1: Obter a conversa para descobrir quem é o outro participante
             val conversationDoc = firestore.collection("conversations")
                 .document(conversationId).get().await()
             val participants = conversationDoc.toObject(Conversation::class.java)?.participants
             val otherUserId = participants?.firstOrNull { it != currentUserId }
 
-            // Se não houver outro utilizador, não há nada a fazer
             if (otherUserId == null) {
                 Log.d("ChatRepoImpl", "Outro utilizador não encontrado, não é possível marcar como lido.")
                 return
             }
 
-            // Passo 2: Buscar apenas as mensagens enviadas pelo OUTRO utilizador
-            // que ainda não foram lidas.
             val messagesToUpdateQuery = firestore.collection("conversations")
                 .document(conversationId)
                 .collection("messages")
-                // Condição 1: Mensagens do outro utilizador
                 .whereEqualTo("senderId", otherUserId)
-                // Condição 2: Status diferente de "Lido" (usando 'in' para mais flexibilidade)
                 .whereIn("status", listOf(MessageStatus.SENT, MessageStatus.DELIVERED))
                 .get()
                 .await()
@@ -124,7 +117,6 @@ class ChatRepositoryImpl @Inject constructor(
                 return // Nada a atualizar
             }
 
-            // Cria uma operação em lote (batch) para atualizar todos os documentos de uma só vez
             val batch = firestore.batch()
             for (document in messagesToUpdateQuery.documents) {
                 batch.update(document.reference, "status", MessageStatus.READ)
@@ -193,8 +185,6 @@ class ChatRepositoryImpl @Inject constructor(
         }
     }
 
-    // Dentro de ChatRepositoryImpl.kt
-
     override fun getUserConversations(): Flow<List<ConversationWithDetails>> {
         val currentUserId = firebaseAuth.currentUser?.uid ?: return flowOf(emptyList())
 
@@ -206,9 +196,8 @@ class ChatRepositoryImpl @Inject constructor(
             val listener = query.addSnapshotListener { snapshot, error ->
                 if (error != null) { close(error); return@addSnapshotListener }
                 if (snapshot != null) {
-                    // ALTERAÇÃO AQUI: Usar o mapeamento manual
                     val convos = snapshot.documents.mapNotNull { doc ->
-                        documentToConversation(doc) // Usando a nossa nova função
+                        documentToConversation(doc)
                     }
                     trySend(convos)
                 }
@@ -216,27 +205,21 @@ class ChatRepositoryImpl @Inject constructor(
             awaitClose { listener.remove() }
         }
 
-        // 2. Transforma o fluxo de conversas no fluxo de detalhes
         return conversationsFlow.flatMapLatest { conversations ->
             if (conversations.isEmpty()) {
                 return@flatMapLatest flowOf(emptyList())
             }
 
-            // Mapeia cada conversa para um fluxo de detalhes
             val detailedFlows = conversations.map { conversation ->
                 if (conversation.isGroup) {
-                    // SE FOR UM GRUPO, o otherParticipant é nulo.
-                    // A UI irá usar o conversation.groupName.
                     flowOf(ConversationWithDetails(conversation, null))
                 } else {
-                    // SE FOR INDIVIDUAL, encontra o outro utilizador e busca os seus detalhes.
                     val otherId = conversation.participants.firstOrNull { it != currentUserId } ?: ""
                     getUserFlow(otherId).map { user ->
                         ConversationWithDetails(conversation, user)
                     }
                 }
             }
-            // Combina todos os fluxos num só
             combine(detailedFlows) { details -> details.toList() }
         }
     }
@@ -263,7 +246,6 @@ class ChatRepositoryImpl @Inject constructor(
         return firestore.collection("conversations").document(conversationId)
             .snapshots()
             .map { snapshot ->
-                // ALTERAÇÃO AQUI: Substituir .toObject() pelo nosso mapeamento manual
                 if (snapshot.exists()) {
                     documentToConversation(snapshot)
                 } else {
@@ -275,10 +257,8 @@ class ChatRepositoryImpl @Inject constructor(
                     flowOf(null)
                 } else {
                     if (conversation.isGroup) {
-                        // Para grupos, o otherParticipant é nulo
                         flowOf(ConversationWithDetails(conversation, null))
                     } else {
-                        // Para chats individuais, busca os detalhes do outro utilizador
                         val otherId = conversation.participants.firstOrNull { it != currentUserId } ?: ""
                         getUserFlow(otherId).map { user ->
                             ConversationWithDetails(conversation, user)
