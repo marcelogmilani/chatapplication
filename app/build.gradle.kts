@@ -51,6 +51,8 @@ android {
 }
 
 dependencies {
+    implementation("com.google.firebase:firebase-database-ktx:21.0.0")
+    implementation(libs.accompanist.permissions)
     implementation(libs.firebase.messaging.ktx)
     implementation(libs.firebase.appcheck.playintegrity)
     implementation(libs.firebase.appcheck.playintegrity.debug)

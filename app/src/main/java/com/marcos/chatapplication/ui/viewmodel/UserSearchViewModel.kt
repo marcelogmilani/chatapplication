@@ -1,13 +1,21 @@
 package com.marcos.chatapplication.ui.viewmodel
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.provider.ContactsContract
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.FirebaseDatabase
 import com.marcos.chatapplication.domain.contracts.ChatRepository
 import com.marcos.chatapplication.domain.contracts.UserRepository
 import com.marcos.chatapplication.domain.model.User
+import com.marcos.chatapplication.ui.screens.Contato
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
@@ -62,6 +70,38 @@ class UserSearchViewModel @Inject constructor(
             }.onFailure { exception ->
                 _uiState.update { it.copy(errorMessage = exception.message, isLoading = false) }
             }
+        }
+    }
+
+    private val _contatos = MutableStateFlow<List<Contato>>(emptyList())
+    val contatos: StateFlow<List<Contato>> = _contatos
+
+    @SuppressLint("Range")
+    fun lerContatos(context: Context) {
+        val lista = mutableListOf<Contato>()
+        val cursor = context.contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            null, null, null, null
+        )
+
+        cursor?.use {
+            while (it.moveToNext()) {
+                val nome = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))
+                val telefone = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER))
+                lista.add(Contato(nome, telefone))
+            }
+        }
+
+        _contatos.value = lista
+        sincronizarComFirebase(lista)
+    }
+
+    fun sincronizarComFirebase(contatos: List<Contato>) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        val ref = FirebaseDatabase.getInstance().getReference("contatos/$uid")
+
+        contatos.forEach {
+            ref.push().setValue(it)
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.marcos.chatapplication.ui.screens
 
+import android.Manifest
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,17 +29,22 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
 import com.marcos.chatapplication.R
 import com.marcos.chatapplication.domain.model.User
 import com.marcos.chatapplication.ui.viewmodel.UserSearchViewModel
@@ -108,6 +114,8 @@ fun UserSearchScreen(
 
             Divider(modifier = Modifier.padding(horizontal = 16.dp))
 
+            SolicitarPermissaoContatos()
+
             if (uiState.isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -150,5 +158,35 @@ fun UserSearchItem(user: User, onClick: () -> Unit) {
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(text = user.username ?: "Usuário sem nome", style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+fun SolicitarPermissaoContatos() {
+    val permissionState = rememberPermissionState(Manifest.permission.READ_CONTACTS)
+    val userSearchViewModel: UserSearchViewModel = hiltViewModel()
+    val context = LocalContext.current
+    val contatos by userSearchViewModel.contatos.collectAsState()
+
+    LaunchedEffect(Unit) {
+        permissionState.launchPermissionRequest()
+    }
+
+    LaunchedEffect(permissionState.status.isGranted) {
+        if (permissionState.status.isGranted) {
+            userSearchViewModel.lerContatos(context)
+        }
+    }
+
+    ListaContatos(contatos = contatos)
+}
+
+@Composable
+fun ListaContatos(contatos: List<Contato>) {
+    LazyColumn {
+        items(contatos) { contato ->
+            Text(text = "${contato.nome} - ${contato.telefone}")
+        }
     }
 }
