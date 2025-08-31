@@ -40,6 +40,7 @@ import coil.compose.AsyncImage
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.marcos.chatapplication.R // Para o placeholder
+import com.marcos.chatapplication.domain.model.Conversation
 import com.marcos.chatapplication.domain.model.Message
 import com.marcos.chatapplication.domain.model.MessageStatus
 import com.marcos.chatapplication.domain.model.User
@@ -60,23 +61,14 @@ fun ChatScreen(
     val coroutineScope = rememberCoroutineScope()
     var isSearchVisible by remember { mutableStateOf(false) }
 
-    val conversationDetails = uiState.conversationDetails
     val conversation = uiState.conversationDetails?.conversation
-    val otherParticipant = uiState.conversationDetails?.otherParticipant
     val pinnedMessageId = conversation?.pinnedMessageId
 
-    LaunchedEffect(uiState.messages.size) {
-        if (uiState.messages.isNotEmpty()) {
+    // Efeito para rolar para o fim da lista com novas mensagens
+    LaunchedEffect(uiState.messages.size, uiState.searchQuery) {
+        if (uiState.messages.isNotEmpty() && uiState.searchQuery.isBlank()) {
             coroutineScope.launch {
                 listState.animateScrollToItem(uiState.messages.size - 1)
-            }
-        }
-    }
-
-    LaunchedEffect(uiState.filteredMessages.size) {
-        if (uiState.filteredMessages.isNotEmpty() && uiState.searchQuery.isBlank()) {
-            coroutineScope.launch {
-                listState.animateScrollToItem(uiState.filteredMessages.size - 1)
             }
         }
     }
@@ -93,59 +85,14 @@ fun ChatScreen(
                     }
                 )
             } else {
+                // Usando a TopAppBar unificada que sabe lidar com grupos
                 ChatTopAppBar(
                     navController = navController,
-                    otherParticipant = otherParticipant,
+                    conversation = conversation,
+                    otherParticipant = uiState.conversationDetails?.otherParticipant,
                     onSearchClick = { isSearchVisible = true }
                 )
             }
-            TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable(
-                            enabled = conversation?.isGroup == false,
-                            onClick = {
-                                otherParticipant?.uid?.let { userId ->
-                                    if (userId.isNotBlank()) {
-                                        navController.navigate(Screen.OtherUserProfile.createRoute(userId))
-                                    }
-                                }
-                            }
-                        )
-                    ) {
-                        if (conversation?.isGroup == true) {
-                            Icon(
-                                imageVector = Icons.Default.Group,
-                                contentDescription = "Ícone do Grupo",
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = conversation.groupName ?: "Grupo")
-                        } else {
-                            AsyncImage(
-                                model = otherParticipant?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
-                                contentDescription = "Foto do perfil de ${otherParticipant?.username}",
-                                modifier = Modifier
-                                    .size(32.dp) // Tamanho da imagem na TopAppBar
-                                    .clip(CircleShape),
-                                contentScale = ContentScale.Crop,
-                                placeholder = painterResource(id = R.drawable.ic_person_placeholder),
-                                error = painterResource(id = R.drawable.ic_person_placeholder)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = otherParticipant?.username ?: "Carregando...")
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) { // Modificado para usar navController
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
-                    }
-                }
-            )
         },
         bottomBar = {
             MessageInput(
@@ -158,35 +105,123 @@ fun ChatScreen(
             )
         }
     ) { paddingValues ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 8.dp),
-            contentPadding = PaddingValues(vertical = 8.dp)
-        ) {
-            items(uiState.messages) { message ->
-                MessageBubble(message = message)
+        Column(modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)) {
+
+            // Barra de Mensagem Fixada
+            PinnedMessageBar(
+                conversation = conversation,
+                onUnpin = {
+                    val pinnedMessage = uiState.messages.find { it.id == pinnedMessageId }
+                    pinnedMessage?.let { viewModel.onPinMessage(it) }
+                },
+                onClick = {
+                    val index = uiState.messages.indexOfFirst { it.id == pinnedMessageId }
+                    if (index != -1) {
+                        coroutineScope.launch { listState.animateScrollToItem(index) }
+                    }
+                }
+            )
+
+            // Lista de Mensagens
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 8.dp),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                // Itera sobre a lista correta (mensagens ou resultados da busca)
+                val messagesToShow = if (uiState.searchQuery.isNotBlank()) uiState.filteredMessages else uiState.messages
+                items(messagesToShow, key = { it.id }) { message ->
+                    val sender = uiState.participantsDetails[message.senderId]
+                    MessageBubble(
+                        message = message,
+                        sender = sender,
+                        isGroupChat = conversation?.isGroup == true,
+                        isPinned = message.id == pinnedMessageId,
+                        onLongPress = { viewModel.onPinMessage(message) }
+                    )
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChatTopAppBar(
+    navController: NavController,
+    conversation: Conversation?,
+    otherParticipant: User?,
+    onSearchClick: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable(
+                    enabled = conversation?.isGroup == false,
+                    onClick = {
+                        otherParticipant?.uid?.let { userId ->
+                            if (userId.isNotBlank()) {
+                                navController.navigate(Screen.OtherUserProfile.createRoute(userId))
+                            }
+                        }
+                    }
+                )
+            ) {
+                // Lógica unificada para mostrar ícone/foto e nome do grupo/utilizador
+                if (conversation?.isGroup == true) {
+                    Icon(
+                        imageVector = Icons.Default.Group,
+                        contentDescription = "Ícone do Grupo",
+                        modifier = Modifier.size(32.dp).clip(CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = conversation.groupName ?: "Grupo")
+                } else {
+                    AsyncImage(
+                        model = otherParticipant?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
+                        contentDescription = "Foto de ${otherParticipant?.username}",
+                        modifier = Modifier.size(32.dp).clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                        placeholder = painterResource(id = R.drawable.ic_person_placeholder),
+                        error = painterResource(id = R.drawable.ic_person_placeholder)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = otherParticipant?.username ?: "Carregando...")
+                }
+            }
+        },
+        navigationIcon = {
+            IconButton(onClick = { navController.popBackStack() }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
+            }
+        },
+        actions = {
+            IconButton(onClick = onSearchClick) {
+                Icon(Icons.Default.Search, contentDescription = "Buscar Mensagens")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageBubble(
     message: Message,
-    sender: User?, // Modificado de senderName: String? para User?
+    sender: User?,
     isGroupChat: Boolean,
     isPinned: Boolean,
     onLongPress: () -> Unit
 ) {
-
     val currentUserId = Firebase.auth.currentUser?.uid
     val isSentByCurrentUser = message.senderId == currentUserId
 
     val bubbleColor = if (isPinned) {
-        MaterialTheme.colorScheme.tertiaryContainer
+        MaterialTheme.colorScheme.tertiaryContainer // Cor para mensagem fixada
     } else if (isSentByCurrentUser) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
@@ -200,14 +235,12 @@ fun MessageBubble(
         horizontalArrangement = if (isSentByCurrentUser) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Bottom
     ) {
-
+        // Avatar do remetente (só em grupos e para mensagens recebidas)
         if (isGroupChat && !isSentByCurrentUser) {
             AsyncImage(
                 model = sender?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
-                contentDescription = "Foto do perfil de ${sender?.username}",
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape),
+                contentDescription = "Foto de ${sender?.username}",
+                modifier = Modifier.size(32.dp).clip(CircleShape),
                 contentScale = ContentScale.Crop,
                 placeholder = painterResource(id = R.drawable.ic_person_placeholder),
                 error = painterResource(id = R.drawable.ic_person_placeholder)
@@ -215,9 +248,9 @@ fun MessageBubble(
             Spacer(modifier = Modifier.width(8.dp))
         }
 
-        Column(
-            horizontalAlignment = if (isSentByCurrentUser) Alignment.End else Alignment.Start
-        ) {
+        // Coluna para nome e balão da mensagem
+        Column(horizontalAlignment = if (isSentByCurrentUser) Alignment.End else Alignment.Start) {
+            // Nome do remetente (só em grupos e para mensagens recebidas)
             if (isGroupChat && !isSentByCurrentUser && sender != null) {
                 Text(
                     text = sender.username ?: "Utilizador",
@@ -227,51 +260,51 @@ fun MessageBubble(
                 )
             }
 
+            // O balão da mensagem
             Box(
                 modifier = Modifier
                     .clip(
                         RoundedCornerShape(
-                            topStart = if (isSentByCurrentUser) 16.dp else 0.dp,
+                            topStart = if (isSentByCurrentUser || isGroupChat) 16.dp else 0.dp,
                             topEnd = if (isSentByCurrentUser) 0.dp else 16.dp,
                             bottomStart = 16.dp,
                             bottomEnd = 16.dp
                         )
                     )
-                    .background(
-                        if (isSentByCurrentUser) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.secondaryContainer
+                    .background(bubbleColor)
+                    .combinedClickable( // Para fixar a mensagem
+                        onClick = {},
+                        onLongClick = onLongPress,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
                     )
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    if (isPinned) {
-                        Icon(
-                            Icons.Default.PushPin,
-                            contentDescription = "Fixada",
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
+                // Conteúdo do balão
+                Row(verticalAlignment = Alignment.Bottom) {
                     Text(
                         text = message.text,
                         modifier = Modifier.weight(1f, fill = false)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Column(horizontalAlignment = Alignment.End) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = DateFormatter.formatMessageTimestamp(message.timestamp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isPinned) {
+                            Icon(
+                                Icons.Default.PushPin,
+                                contentDescription = "Fixada",
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )
-                            if (isSentByCurrentUser) {
-                                Spacer(modifier = Modifier.width(4.dp))
-                                MessageStatusIcon(status = message.status)
-                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                        Text(
+                            text = DateFormatter.formatMessageTimestamp(message.timestamp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                        if (isSentByCurrentUser) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            MessageStatusIcon(status = message.status)
                         }
                     }
                 }
@@ -279,6 +312,103 @@ fun MessageBubble(
         }
     }
 }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(64.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onClose) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Fechar Busca")
+            }
+            TextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Buscar mensagens...") },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                ),
+                maxLines = 1,
+                singleLine = true
+            )
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Default.Clear, contentDescription = "Limpar Busca")
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun PinnedMessageBar(
+    conversation: Conversation?,
+    onUnpin: () -> Unit,
+    onClick: () -> Unit
+) {
+    val pinnedMessageText = conversation?.pinnedMessageText
+
+    AnimatedVisibility(visible = pinnedMessageText != null) {
+        if (pinnedMessageText != null) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                onClick = onClick
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.PushPin,
+                        contentDescription = "Mensagem Fixada",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Mensagem Fixada",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = pinnedMessageText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = onUnpin, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Default.Clear,
+                            contentDescription = "Desafixar Mensagem",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 
 @Composable

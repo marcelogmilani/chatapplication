@@ -232,7 +232,9 @@ class ChatRepositoryImpl @Inject constructor(
                 lastMessage = doc.getString("lastMessage"),
                 lastMessageTimestamp = doc.getDate("lastMessageTimestamp"),
                 isGroup = doc.getBoolean("isGroup") ?: false,
-                groupName = doc.getString("groupName")
+                groupName = doc.getString("groupName"),
+                pinnedMessageId = doc.getString("pinnedMessageId"),
+                pinnedMessageText = doc.getString("pinnedMessageText")
             )
         } catch (e: Exception) {
             Log.e("ChatRepoImpl", "Erro ao mapear o documento da conversa manualmente", e)
@@ -283,25 +285,28 @@ class ChatRepositoryImpl @Inject constructor(
     override suspend fun pinMessage(conversationId: String, message: Message?): Result<Unit> {
         return try {
             val conversationRef = firestore.collection("conversations").document(conversationId)
-            val updates = if (message != null) {
-                // Fixa a mensagem
-                mapOf(
-                    "pinnedMessageId" to message.id,
-                    "pinnedMessageText" to message.text,
-                    "pinnedMessageSenderId" to message.senderId
-                )
+
+            if (message == null) {
+                // A intenção é DESAFIXAR
+                Log.d("PinMessageDebug", "A tentar desafixar mensagem na conversa $conversationId")
+                conversationRef.update(mapOf(
+                    "pinnedMessageId" to null,
+                    "pinnedMessageText" to null
+                )).await()
+                Log.d("PinMessageDebug", "Mensagem desafixada com SUCESSO.")
             } else {
-                // Desafixa a mensagem
-                mapOf(
-                    "pinnedMessageId" to FieldValue.delete(),
-                    "pinnedMessageText" to FieldValue.delete(),
-                    "pinnedMessageSenderId" to FieldValue.delete()
-                )
+                // A intenção é FIXAR
+                Log.d("PinMessageDebug", "A tentar fixar a mensagem '${message.text}' na conversa $conversationId")
+                conversationRef.update(mapOf(
+                    "pinnedMessageId" to message.id,
+                    "pinnedMessageText" to message.text
+                )).await()
+                Log.d("PinMessageDebug", "Mensagem fixada com SUCESSO.")
             }
-            conversationRef.update(updates).await()
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e("ChatRepoImpl", "Error pinning message", e)
+            // Se a operação falhar, veremos este erro no Logcat
+            Log.e("PinMessageDebug", "ERRO ao tentar fixar/desafixar mensagem", e)
             Result.failure(e)
         }
     }

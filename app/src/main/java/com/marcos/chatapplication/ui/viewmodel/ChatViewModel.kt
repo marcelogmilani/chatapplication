@@ -88,6 +88,7 @@ class ChatViewModel @Inject constructor(
         initialValue = ChatUiState(isLoading = true)
     )
 
+
     fun sendMessage(text: String) {
         if (text.isBlank()) return
 
@@ -102,9 +103,14 @@ class ChatViewModel @Inject constructor(
 
     fun onPinMessage(message: Message) {
         viewModelScope.launch {
+            // Obtém o ID da mensagem atualmente fixada
             val currentPinnedId = uiState.value.conversationDetails?.conversation?.pinnedMessageId
-            val messageToPin = if (currentPinnedId == message.id) null else message
-            chatRepository.pinMessage(conversationId, messageToPin)
+            // Se a mensagem clicada for a mesma que está fixada, passamos null (para desafixar)
+            // Caso contrário, passamos a nova mensagem para fixar
+            val messageToPin: Message? = if (currentPinnedId == message.id) null else message
+            chatRepository.pinMessage(conversationId, messageToPin).onFailure { error ->
+                // ... (tratamento de erro)
+            }
         }
     }
 }

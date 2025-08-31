@@ -10,7 +10,9 @@ data class Conversation(
     @ServerTimestamp val lastMessageTimestamp: Date? = null,
     val pinnedMessageId: String? = null,
     val pinnedMessageText: String? = null,
-    val pinnedMessageSenderId: String? = null
+    val pinnedMessageSenderId: String? = null,
+    val isGroup: Boolean = false,
+    val groupName: String? = null,
 )
 
 data class ConversationWithDetails(
