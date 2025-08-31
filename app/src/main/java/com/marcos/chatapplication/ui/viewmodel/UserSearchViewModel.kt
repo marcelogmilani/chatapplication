@@ -41,12 +41,27 @@ class UserSearchViewModel @Inject constructor(
 
     private var todosUsuariosFirebase: List<User> = emptyList()
 
+    // Carregar usuários do Firebase quando o ViewModel for criado
+    init {
+        carregarTodosUsuarios()
+    }
+
     fun carregarTodosUsuarios() {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+
             val result = userRepository.getAllUsers()
             result.onSuccess { users ->
                 todosUsuariosFirebase = users
                 atualizarResultadosCombinados()
+                _uiState.update { it.copy(isLoading = false) }
+            }.onFailure {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "Erro ao carregar usuários"
+                    )
+                }
             }
         }
     }
@@ -55,16 +70,43 @@ class UserSearchViewModel @Inject constructor(
         _uiState.update { it.copy(query = newQuery) }
 
         viewModelScope.launch {
-            val result = userRepository.searchUsersByUsername(newQuery)
-            result.onSuccess { firebaseUsers ->
+            _uiState.update { it.copy(isLoading = true) }
+
+            try {
+                // Buscar usuários do Firebase que correspondem à query
+                val firebaseUsers = if (newQuery.isNotEmpty()) {
+                    val result = userRepository.searchUsersByUsername(newQuery)
+                    result.getOrElse { emptyList() }
+                } else {
+                    emptyList()
+                }
+
+                // Buscar contatos locais que correspondem à query
                 val contatosFiltrados = _contatos.value.filter {
-                    it.nome.contains(newQuery, ignoreCase = true)
+                    it.nome.contains(newQuery, ignoreCase = true) ||
+                            it.telefone.contains(newQuery)
                 }.map {
                     User(uid = it.telefone, username = it.nome, profilePictureUrl = null)
                 }
 
-                val combinados = firebaseUsers + contatosFiltrados
-                _uiState.update { it.copy(searchResults = combinados, isLoading = false) }
+                // Combinar e ordenar resultados
+                val combinados = (firebaseUsers + contatosFiltrados)
+                    .distinctBy { it.uid }
+                    .sortedBy { it.username?.lowercase() ?: "" }
+
+                _uiState.update {
+                    it.copy(
+                        searchResults = combinados,
+                        isLoading = false
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "Erro na busca"
+                    )
+                }
             }
         }
     }
@@ -78,7 +120,10 @@ class UserSearchViewModel @Inject constructor(
                 _navigateToChat.send(conversationId)
             }.onFailure {
                 _uiState.update {
-                    it.copy(isLoading = false, errorMessage = "Não foi possível iniciar a conversa.")
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "Não foi possível iniciar a conversa."
+                    )
                 }
             }
         }
@@ -86,39 +131,88 @@ class UserSearchViewModel @Inject constructor(
 
     @SuppressLint("Range")
     fun lerContatos(context: Context) {
-        val lista = mutableListOf<Contato>()
-        val cursor = context.contentResolver.query(
-            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-            null, null, null, null
-        )
+        viewModelScope.launch {
+            try {
+                val lista = mutableListOf<Contato>()
+                val cursor = context.contentResolver.query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    null, null, null,
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
+                )
 
-        cursor?.use {
-            while (it.moveToNext()) {
-                val nome = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))
-                val telefone = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER))
-                lista.add(Contato(nome, telefone))
+                cursor?.use {
+                    val nameIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                    val numberIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+
+                    while (it.moveToNext()) {
+                        val nome = it.getString(nameIndex) ?: ""
+                        val telefone = it.getString(numberIndex) ?: ""
+
+                        // Limpar e formatar telefone - CORREÇÃO AQUI
+                        val telefoneLimpo = telefone.replace("[^0-9]".toRegex(), "")
+
+                        // CORREÇÃO: Verificar length depois de garantir que não é null
+                        if (nome.isNotBlank() && telefoneLimpo.length >= 10) {
+                            // Evitar duplicatas
+                            if (lista.none { contato -> contato.telefone == telefoneLimpo }) {
+                                lista.add(Contato(nome, telefoneLimpo))
+                            }
+                        }
+                    }
+                }
+
+                // Ordenar contatos alfabeticamente
+                val contatosOrdenados = lista.sortedBy { it.nome.lowercase() }
+
+                _contatos.value = contatosOrdenados
+                sincronizarComFirebase(contatosOrdenados)
+                atualizarResultadosCombinados()
+
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(errorMessage = "Erro ao carregar contatos: ${e.message}")
+                }
             }
         }
-
-        _contatos.value = lista
-        sincronizarComFirebase(lista)
-        atualizarResultadosCombinados()
     }
 
     private fun atualizarResultadosCombinados() {
+        // Converter contatos para Users
         val contatosConvertidos = _contatos.value.map {
             User(uid = it.telefone, username = it.nome, profilePictureUrl = null)
         }
-        val combinados = todosUsuariosFirebase + contatosConvertidos
-        _uiState.update { it.copy(searchResults = combinados) }
+
+        // Combinar usuários do Firebase + contatos do dispositivo
+        val todosUsuarios = todosUsuariosFirebase + contatosConvertidos
+
+        // Ordenar alfabeticamente por username
+        val combinadosOrdenados = todosUsuarios
+            .distinctBy { it.uid }
+            .sortedBy { it.username?.lowercase() ?: "" }
+
+        _uiState.update {
+            it.copy(searchResults = combinadosOrdenados)
+        }
     }
 
     fun sincronizarComFirebase(contatos: List<Contato>) {
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
         val ref = FirebaseDatabase.getInstance().getReference("contatos/$uid")
 
-        contatos.forEach {
-            ref.push().setValue(it)
+        // Limpar contatos antigos antes de adicionar novos
+        ref.removeValue().addOnCompleteListener {
+            contatos.forEachIndexed { index, contato ->
+                ref.child(index.toString()).setValue(contato)
+            }
         }
+    }
+
+    // Novo método para forçar atualização dos contatos
+    fun atualizarContatos(context: Context) {
+        lerContatos(context)
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(errorMessage = null) }
     }
 }

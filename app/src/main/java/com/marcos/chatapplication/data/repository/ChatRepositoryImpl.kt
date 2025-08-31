@@ -17,18 +17,14 @@ import com.marcos.chatapplication.domain.model.MessageStatus
 import com.marcos.chatapplication.domain.model.MessageType
 import com.marcos.chatapplication.domain.model.User
 import com.marcos.chatapplication.utils.NotificationUtils
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 class ChatRepositoryImpl @Inject constructor(
@@ -184,7 +180,6 @@ class ChatRepositoryImpl @Inject constructor(
                 )
             }.commit().await()
 
-            // Enviar notificação após mensagem ser enviada com sucesso
             val otherParticipantId = NotificationUtils.getOtherParticipantId(conversationId)
             otherParticipantId?.let {
                 NotificationUtils.sendMessageNotification(it, text, conversationId)
