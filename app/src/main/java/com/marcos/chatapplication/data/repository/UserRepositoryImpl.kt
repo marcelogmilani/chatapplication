@@ -100,4 +100,47 @@ class UserRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+
+    override suspend fun updateUserProfile(userId: String, newUsername: String?, newEmail: String?, newBirthDate: String?): Result<Unit> {
+        if (userId.isBlank()) {
+            return Result.failure(IllegalArgumentException("User ID cannot be blank."))
+        }
+
+        return try {
+            val updatesMap = mutableMapOf<String, Any?>()
+
+            newUsername?.let {
+                if (it.isNotBlank()) {
+                    updatesMap["username"] = it
+                    updatesMap["username_lowercase"] = it.lowercase()
+                } else {
+                    // Tratar caso de username em branco se necessário, ou validar antes no ViewModel
+                }
+            }
+
+            newEmail?.let {
+
+                updatesMap["email"] = it
+            }
+
+            newBirthDate?.let {
+
+                updatesMap["birthDate"] = it
+            }
+
+            if (updatesMap.isEmpty()) {
+                return Result.success(Unit)
+            }
+
+            firestore.collection("users").document(userId)
+                .update(updatesMap)
+                .await()
+
+            Log.d("UserRepositoryImpl", "User profile updated successfully for userId: $userId")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("UserRepositoryImpl", "Error updating user profile for userId: $userId", e)
+            Result.failure(e)
+        }
+    }
 }

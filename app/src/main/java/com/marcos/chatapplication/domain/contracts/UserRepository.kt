@@ -9,4 +9,6 @@ interface UserRepository {
     suspend fun updateUserProfilePicture(userId: String, imageUri: Uri): Result<String>
 
     suspend fun saveFcmToken(token: String): Result<Unit>
+
+    suspend fun updateUserProfile(userId: String, newUsername: String?, newEmail: String?, newBirthDate: String?): Result<Unit>
 }
