@@ -650,7 +650,7 @@ fun MessageMetadataRow(
             Spacer(modifier = Modifier.width(4.dp))
         }
         Text(
-            text = DateFormatter.formatMessageTimestamp(message.timestamp),
+            text = DateFormatter.formatFullTimestamp(message.timestamp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
         )
