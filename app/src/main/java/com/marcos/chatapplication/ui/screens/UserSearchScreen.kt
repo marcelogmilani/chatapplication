@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import com.marcos.chatapplication.domain.model.User
@@ -38,6 +39,37 @@ fun UserSearchScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+
+    val invitePopup by viewModel.showInvitePopup.collectAsState(initial = null)
+
+    LaunchedEffect(invitePopup) {
+        if (invitePopup != null) {
+            println("Popup deve ser exibido para: $invitePopup")
+        }
+    }
+
+    invitePopup?.let { telefone ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearInvitePopup() },
+            title = { Text("Usuário não possui o app") },
+            text = { Text("Deseja enviar um convite por SMS para $telefone?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    enviarConviteSMS(context, telefone)
+                    viewModel.clearInvitePopup()
+                }) {
+                    Text("Enviar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.clearInvitePopup()
+                }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
 
     // Solicita permissão e sincroniza contatos
     SolicitarPermissaoContatos(viewModel, context)
@@ -168,4 +200,12 @@ fun SolicitarPermissaoContatos(viewModel: UserSearchViewModel, context: Context)
             viewModel.lerContatos(context)
         }
     }
+}
+
+fun enviarConviteSMS(context: Context, telefone: String) {
+    val smsIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+        data = "sms:$telefone".toUri()
+        putExtra("sms_body", "Oi! Baixe o ChatApp: https://linkdoapp.com")
+    }
+    context.startActivity(smsIntent)
 }

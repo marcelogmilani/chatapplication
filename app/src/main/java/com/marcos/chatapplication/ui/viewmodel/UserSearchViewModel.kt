@@ -16,18 +16,19 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import androidx.core.net.toUri
 
 data class UserSearchUiState(
     val query: String = "",
     val searchResults: List<User> = emptyList(),
     val isLoading: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
 )
 
 @HiltViewModel
 class UserSearchViewModel @Inject constructor(
     private val userRepository: UserRepository,
-    private val chatRepository: ChatRepository
+    private val chatRepository: ChatRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(UserSearchUiState())
@@ -111,21 +112,36 @@ class UserSearchViewModel @Inject constructor(
         }
     }
 
+    private val _showInvitePopup = Channel<String?>()
+    val showInvitePopup = _showInvitePopup.receiveAsFlow()
+
     fun onUserSelected(targetUserId: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            val result = chatRepository.createOrGetConversation(targetUserId)
-            result.onSuccess { conversationId ->
-                _uiState.update { it.copy(isLoading = false) }
-                _navigateToChat.send(conversationId)
-            }.onFailure {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Não foi possível iniciar a conversa."
-                    )
+            val userExists = todosUsuariosFirebase.any { it.uid == targetUserId }
+
+            if (userExists) {
+                _uiState.update { it.copy(isLoading = true) }
+                val result = chatRepository.createOrGetConversation(targetUserId)
+                result.onSuccess { conversationId ->
+                    _uiState.update { it.copy(isLoading = false) }
+                    _navigateToChat.send(conversationId)
+                }.onFailure {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "Não foi possível iniciar a conversa."
+                        )
+                    }
                 }
+            } else {
+                _showInvitePopup.send(targetUserId)
             }
+        }
+    }
+
+    fun clearInvitePopup() {
+        viewModelScope.launch {
+            _showInvitePopup.send(null)
         }
     }
 
@@ -207,7 +223,6 @@ class UserSearchViewModel @Inject constructor(
         }
     }
 
-    // Novo método para forçar atualização dos contatos
     fun atualizarContatos(context: Context) {
         lerContatos(context)
     }
