@@ -20,16 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.* // Mantém os demais imports de icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -42,7 +33,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-// import androidx.compose.ui.text.style.TextAlign // Removido se não usado
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,13 +53,14 @@ import com.marcos.chatapplication.navigation.Screen
 import com.marcos.chatapplication.ui.viewmodel.ChatViewModel
 import com.marcos.chatapplication.ui.viewmodel.GroupActionState
 import com.marcos.chatapplication.util.DateFormatter
+import com.marcos.chatapplication.util.rememberFormattedUserStatus // NOVO IMPORT (ou garanta que está correto)
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    conversationId: String,
+    conversationId: String, // Este parâmetro é necessário para o viewModel
     navController: NavController,
     viewModel: ChatViewModel = hiltViewModel()
 ) {
@@ -81,7 +72,7 @@ fun ChatScreen(
 
     val conversation = uiState.conversationDetails?.conversation
     val pinnedMessageId = conversation?.pinnedMessageId
-    val conversationId = conversation?.id
+    val actualConversationId = conversation?.id // Renomeado para evitar conflito com parâmetro da função
 
     var imageUriForPreview by remember { mutableStateOf<Uri?>(null) }
     var videoUriForPreview by remember { mutableStateOf<Uri?>(null) }
@@ -134,12 +125,10 @@ fun ChatScreen(
     LaunchedEffect(groupActionState) {
         when (val state = groupActionState) {
             is GroupActionState.Success -> {
-                // Mostrar snackbar de sucesso
                 snackbarHostState.showSnackbar(state.message)
                 viewModel.resetGroupActionState()
             }
             is GroupActionState.Error -> {
-                // Mostrar snackbar de erro
                 snackbarHostState.showSnackbar(state.message)
                 viewModel.resetGroupActionState()
             }
@@ -159,19 +148,20 @@ fun ChatScreen(
                     }
                 )
             } else {
+                // ESTA É A ChatTopAppBar QUE PRECISA SER CORRIGIDA / ATUALIZADA
                 ChatTopAppBar(
                     navController = navController,
                     conversation = conversation,
                     otherParticipant = uiState.conversationDetails?.otherParticipant,
                     onSearchClick = { isSearchVisible = true },
                     onEditGroupClick = {
-                        if (conversation?.isGroup == true && conversationId != null && isParticipant) {
-                            navController.navigate(Screen.EditGroup.createRoute(conversationId))
+                        if (conversation?.isGroup == true && actualConversationId != null && isParticipant) {
+                            navController.navigate(Screen.EditGroup.createRoute(actualConversationId))
                         }
                     },
                     onGroupImageChange = { uri ->
-                        if (conversationId != null) {
-                            viewModel.updateGroupImage(conversationId, uri)
+                        if (actualConversationId != null) {
+                            viewModel.updateGroupImage(actualConversationId, uri)
                         }
                     }
                 )
@@ -185,12 +175,12 @@ fun ChatScreen(
                     onSendClick = {
                         val currentImagePreviewUri = imageUriForPreview
                         val currentVideoPreviewUri = videoUriForPreview
-                        val currentPreviewUri = imageUriForPreview
+
                         if (currentImagePreviewUri != null) {
-                            if (conversationId != null) {
+                            if (actualConversationId != null) {
                                 viewModel.sendImageMessage(
                                     currentImagePreviewUri,
-                                    conversationId,
+                                    actualConversationId,
                                     text.ifBlank { null })
                                 imageUriForPreview = null
                                 text = ""
@@ -201,8 +191,8 @@ fun ChatScreen(
                                 )
                             }
                         } else if (currentVideoPreviewUri != null) {
-                            if (conversationId != null) {
-                                viewModel.sendVideoMessage(currentVideoPreviewUri, conversationId, text.ifBlank { null })
+                            if (actualConversationId != null) {
+                                viewModel.sendVideoMessage(currentVideoPreviewUri, actualConversationId, text.ifBlank { null })
                                 videoUriForPreview = null
                                 text = ""
                             } else {
@@ -316,6 +306,7 @@ fun formatDuration(millis: Long?): String {
     }
 }
 
+// ESTA É A ChatTopAppBar QUE PRECISA SER CORRIGIDA
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatTopAppBar(
@@ -326,12 +317,13 @@ fun ChatTopAppBar(
     onEditGroupClick: () -> Unit,
     onGroupImageChange: (Uri) -> Unit
 ) {
-    val currentUserId = Firebase.auth.currentUser?.uid
-    val isParticipant = remember(conversation) {
+    val currentUserId = Firebase.auth.currentUser?.uid // Necessário para a lógica de 'isParticipant'
+    val isParticipant = remember(conversation) { // Necessário para a lógica de 'isParticipant'
         val participants = conversation?.participants ?: emptyList()
         currentUserId in participants
     }
 
+    // Lógica para o image picker de grupo, não relacionada diretamente ao status, mas faz parte desta função
     var showImagePicker by remember { mutableStateOf(false) }
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -339,6 +331,9 @@ fun ChatTopAppBar(
             uri?.let { onGroupImageChange(it) }
         }
     )
+
+    // AQUI ADICIONAMOS A LÓGICA DO STATUS DO USUÁRIO
+    val userStatus = rememberFormattedUserStatus(otherParticipant)
 
     TopAppBar(
         title = {
@@ -356,25 +351,53 @@ fun ChatTopAppBar(
                 )
             ) {
                 if (conversation?.isGroup == true) {
-                    AsyncImage(
-                        model = conversation.groupImageUrl ?: R.drawable.ic_person_placeholder,
+                    AsyncImage( // Para imagem de grupo
+                        model = conversation.groupImageUrl?.ifEmpty { R.drawable.ic_group_placeholder } ?: R.drawable.ic_group_placeholder, // Use um placeholder de grupo
                         contentDescription = "Imagem do Grupo",
                         modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape),
-                        contentScale = ContentScale.Crop
+                            .size(40.dp) // Pode ser um pouco maior para grupos
+                            .clip(CircleShape)
+                            .clickable(enabled = isParticipant) { // Permitir alterar imagem apenas se for participante
+                                showImagePicker = true
+                            },
+                        contentScale = ContentScale.Crop,
+                        placeholder = painterResource(id = R.drawable.ic_group_placeholder), // Placeholder de grupo
+                        error = painterResource(id = R.drawable.ic_group_placeholder) // Placeholder de grupo
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = conversation.groupName ?: "Grupo")
-                } else {
+                    Text(
+                        text = conversation.groupName ?: "Grupo",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleLarge // Pode ser um pouco maior para nome de grupo
+                    )
+                } else { // Conversa Individual
                     AsyncImage(
                         model = otherParticipant?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
                         contentDescription = "Foto de perfil de ${otherParticipant?.username}",
-                        modifier = Modifier.size(32.dp).clip(CircleShape),
-                        contentScale = ContentScale.Crop
+                        modifier = Modifier.size(40.dp).clip(CircleShape), // Aumentado para 40dp para consistência
+                        contentScale = ContentScale.Crop,
+                        placeholder = painterResource(id = R.drawable.ic_person_placeholder),
+                        error = painterResource(id = R.drawable.ic_person_placeholder)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = otherParticipant?.username ?: "Carregando...")
+                    Column { // Empilha Nome e Status
+                        Text(
+                            text = otherParticipant?.username ?: "Carregando...",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        if (userStatus.isNotBlank()) {
+                            Text(
+                                text = userStatus,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (userStatus == "Online") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -387,7 +410,7 @@ fun ChatTopAppBar(
             IconButton(onClick = onSearchClick) {
                 Icon(Icons.Default.Search, contentDescription = "Buscar Mensagens")
             }
-            if (conversation?.isGroup == true && isParticipant) {
+            if (conversation?.isGroup == true && isParticipant) { // Apenas mostrar se for participante
                 IconButton(onClick = onEditGroupClick) {
                     Icon(Icons.Default.Settings, contentDescription = "Editar Grupo")
                 }
@@ -395,12 +418,13 @@ fun ChatTopAppBar(
         }
     )
 
+    // LaunchedEffect para o image picker de grupo
     if (showImagePicker) {
-        LaunchedEffect(showImagePicker) {
+        LaunchedEffect(showImagePicker) { // Este LaunchedEffect é para o imagePicker do grupo
             imagePickerLauncher.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
             )
-            showImagePicker = false
+            showImagePicker = false // Resetar após lançar
         }
     }
 }
@@ -487,7 +511,7 @@ fun MessageBubble(
                         },
                         onLongClick = onLongPress,
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null
+                        indication = null // Ou androidx.compose.material.ripple.rememberRipple() para feedback
                     )
             ) {
                 when (message.type) {
@@ -502,7 +526,7 @@ fun MessageBubble(
                                     .build(),
                                 contentDescription = message.fileName ?: "Imagem",
                                 modifier = Modifier
-                                    .fillMaxWidth(0.7f)
+                                    .fillMaxWidth(0.7f) // Ajuste conforme necessário
                                     .aspectRatio(16f / 9f)
                                     .clip(RoundedCornerShape(8.dp)),
                                 contentScale = ContentScale.Crop
@@ -519,18 +543,18 @@ fun MessageBubble(
                             modifier = if (!message.text.isNullOrBlank() && message.text != MessageType.VIDEO_LABEL)
                                 Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                             else
-                                Modifier
+                                Modifier // Sem padding extra se não houver legenda
                         ) {
-                            Box(
+                            Box( // Contêiner para a miniatura e o ícone de play
                                 modifier = Modifier
-                                    .fillMaxWidth(0.7f)
+                                    .fillMaxWidth(0.7f) // Ajuste conforme necessário
                                     .aspectRatio(16f / 9f)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)) // Fundo para a área da miniatura
                             ) {
                                 AsyncImage(
                                     model = ImageRequest.Builder(LocalContext.current)
-                                        .data(message.thumbnailUrl ?: R.drawable.ic_video_placeholder)
+                                        .data(message.thumbnailUrl ?: R.drawable.ic_video_placeholder) // Fallback para placeholder
                                         .crossfade(true)
                                         .placeholder(R.drawable.ic_video_placeholder)
                                         .error(R.drawable.ic_video_placeholder)
@@ -539,13 +563,13 @@ fun MessageBubble(
                                     modifier = Modifier.matchParentSize(),
                                     contentScale = ContentScale.Crop
                                 )
-                                Icon(
+                                Icon( // Ícone de Play sobreposto
                                     imageVector = Icons.Filled.PlayArrow,
                                     contentDescription = "Reproduzir vídeo",
                                     modifier = Modifier
                                         .align(Alignment.Center)
                                         .size(48.dp)
-                                        .background(Color.Black.copy(alpha = 0.3f), CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.3f), CircleShape) // Fundo semitransparente para o ícone
                                         .padding(8.dp),
                                     tint = Color.White
                                 )
@@ -566,28 +590,29 @@ fun MessageBubble(
                                 Text(
                                     text = caption,
                                     style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                       )
+                                    modifier = Modifier.padding(top = 4.dp) // Adiciona padding apenas se houver legenda
+                                )
                             }
                             MessageMetadataRow(
                                 message,
                                 isSentByCurrentUser,
                                 isPinned,
+                                // Adiciona padding horizontal e vertical se não houver legenda e for uma mensagem de vídeo pura
                                 modifier = if (caption == null && (message.text == MessageType.VIDEO_LABEL || message.text.isNullOrBlank()))
                                     Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                                 else
-                                    Modifier
+                                    Modifier // Caso contrário, o padding já foi aplicado pelo Column pai da miniatura
                             )
                         }
                     }
                     else -> { // Mensagem de Texto
-                        Row(
+                        Row( // Para alinhar texto e metadados na mesma linha
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.Bottom
+                            verticalAlignment = Alignment.Bottom // Alinha metadados com a base do texto
                         ) {
                             Text(
                                 text = message.text ?: "",
-                                modifier = Modifier.weight(1f, fill = false)
+                                modifier = Modifier.weight(1f, fill = false) // Ocupa espaço, mas não preenche excessivamente
                             )
                             MessageMetadataRow(message, isSentByCurrentUser, isPinned, isText = true)
                         }
@@ -604,13 +629,14 @@ fun MessageMetadataRow(
     isSentByCurrentUser: Boolean,
     isPinned: Boolean,
     modifier: Modifier = Modifier,
-    isText: Boolean = false
+    isText: Boolean = false // Novo parâmetro para diferenciar texto de mídia
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = if (isText) Arrangement.End else Arrangement.Start, // Para texto, alinhar metadados à direita do texto
+        // Para mensagens de texto, os metadados ficam à direita do texto. Para mídia, abaixo.
+        horizontalArrangement = if (isText) Arrangement.End else Arrangement.Start,
         modifier = modifier.then(
-            if (!isText) Modifier.fillMaxWidth().padding(top = 4.dp) // Para imagem/vídeo, ocupa largura e tem padding superior
+            if (!isText) Modifier.fillMaxWidth().padding(top = 4.dp) // Para mídia, ocupa largura e tem padding superior
             else Modifier.padding(start = 8.dp) // Para texto, apenas padding inicial para separar do texto
         )
     ) {
@@ -624,7 +650,6 @@ fun MessageMetadataRow(
             Spacer(modifier = Modifier.width(4.dp))
         }
         Text(
-            // Usar formatMessageTimestamp que você já tinha, ou formatFullTimestamp se preferir mais detalhe
             text = DateFormatter.formatMessageTimestamp(message.timestamp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -636,77 +661,23 @@ fun MessageMetadataRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ChatTopAppBar(
-    navController: NavController,
-    conversation: Conversation?,
-    otherParticipant: User?,
-    onSearchClick: () -> Unit
-) {
-    TopAppBar(
-        title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable(
-                    enabled = conversation?.isGroup == false && otherParticipant != null,
-                    onClick = {
-                        otherParticipant?.uid?.let { userId ->
-                            if (userId.isNotBlank()) {
-                                navController.navigate(Screen.OtherUserProfile.createRoute(userId))
-                            }
-                        }
-                    }
-                )
-            ) {
-                if (conversation?.isGroup == true) {
-                    Icon(
-                        imageVector = Icons.Default.Group,
-                        contentDescription = "Ícone do Grupo",
-                        modifier = Modifier.size(32.dp).clip(CircleShape)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = conversation.groupName ?: "Grupo")
-                } else {
-                    AsyncImage(
-                        model = otherParticipant?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
-                        contentDescription = "Foto de perfil de ${otherParticipant?.username}",
-                        modifier = Modifier.size(32.dp).clip(CircleShape),
-                        contentScale = ContentScale.Crop,
-                        placeholder = painterResource(id = R.drawable.ic_person_placeholder),
-                        error = painterResource(id = R.drawable.ic_person_placeholder)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = otherParticipant?.username ?: "Carregando...")
-                }
-            }
-        },
-        navigationIcon = {
-            IconButton(onClick = { navController.popBackStack() }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
-            }
-        },
-        actions = {
-            IconButton(onClick = onSearchClick) {
-                Icon(Icons.Default.Search, contentDescription = "Buscar Mensagens")
-            }
-        }
-    )
-}
+// A ChatTopAppBar duplicada que tinha a lógica de status FOI REMOVIDA
+// As funções rememberFormattedUserStatus e formatUserStatus DEVEM SER REMOVIDAS daqui
+// e usadas a partir de util.StatusFormatter.kt
 
 @Composable
 fun MessageStatusIcon(status: String) {
     val icon = when (status) {
         MessageStatus.SENT -> Icons.Default.Done
         MessageStatus.DELIVERED -> Icons.Default.DoneAll
-        MessageStatus.READ -> Icons.Filled.DoneAll
-        else -> null
+        MessageStatus.READ -> Icons.Filled.DoneAll // MaterialTheme.colorScheme.primary para este
+        else -> null // ou um ícone de pendente/erro se quiser
     }
     val contentDesc = when (status) {
         MessageStatus.SENT -> "Mensagem enviada"
         MessageStatus.DELIVERED -> "Mensagem entregue"
         MessageStatus.READ -> "Mensagem lida"
-        else -> "Status da mensagem"
+        else -> "Status da mensagem" // Ou um específico para pendente/erro
     }
     val iconColor = if (status == MessageStatus.READ) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
 
@@ -729,13 +700,13 @@ fun SearchBar(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = MaterialTheme.colorScheme.surfaceVariant, // Ou Surface, dependendo do design
         shadowElevation = 4.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp),
+                .height(64.dp), // Altura padrão da TopAppBar
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
@@ -750,16 +721,16 @@ fun SearchBar(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
                     disabledContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent, // Sem linha indicadora
+                    unfocusedIndicatorColor = Color.Transparent, // Sem linha indicadora
                     cursorColor = MaterialTheme.colorScheme.primary
                 ),
                 maxLines = 1,
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge
+                textStyle = MaterialTheme.typography.bodyLarge // Ou o estilo desejado
             )
             if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
+                IconButton(onClick = { onQueryChange("") }) { // Limpar query
                     Icon(Icons.Default.Clear, contentDescription = "Limpar Busca")
                 }
             }
@@ -777,7 +748,7 @@ fun PinnedMessageBar(
     val pinnedMessageText = conversation?.pinnedMessageText
 
     AnimatedVisibility(visible = pinnedMessageText != null) {
-        if (pinnedMessageText != null) {
+        if (pinnedMessageText != null) { // Verificação para Smart Cast
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -823,6 +794,7 @@ fun PinnedMessageBar(
     }
 }
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MessageInput(
@@ -840,7 +812,8 @@ fun MessageInput(
         shadowElevation = 8.dp,
         color = MaterialTheme.colorScheme.surface // Cor de fundo da barra de input
     ) {
-        Column {
+        Column { // Para empilhar a pré-visualização e a barra de input
+            // Pré-visualização da Imagem
             if (previewImageUri != null) {
                 Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)) {
                     AsyncImage(
@@ -852,7 +825,7 @@ fun MessageInput(
                             .clip(RoundedCornerShape(8.dp)),
                         contentScale = ContentScale.Crop
                     )
-                    IconButton( // Botão para remover a pré-visualização
+                    IconButton(
                         onClick = onRemovePreviewImage,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -867,7 +840,7 @@ fun MessageInput(
                     }
                 }
             } else if (previewVideoUri != null) {
-                 Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+                Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)) // Fundo para a pré-visualização do vídeo
                     .fillMaxWidth()
                     .height(100.dp) // Altura da miniatura

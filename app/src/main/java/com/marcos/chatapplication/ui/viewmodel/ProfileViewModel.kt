@@ -19,26 +19,20 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone // Import TimeZone
+import java.util.TimeZone
 import javax.inject.Inject
 import kotlinx.coroutines.tasks.await
 
-// Estado da UI para a tela de perfil
 data class ProfileUiState(
     val user: User? = null,
     val isLoadingUser: Boolean = true,
-
-    // Para edição de perfil
     val editableUsername: String = "",
     val editableEmail: String = "",
-    val editableBirthDate: String = "", // Deve ser "dd/MM/yyyy" representando o dia em UTC
+    val editableBirthDate: String = "",
+    val editableStatus: String = "", // Este continua representando o userSetStatus na UI
     val showDatePickerDialog: Boolean = false,
-
-    // Para upload de foto
     val isUploadingProfilePicture: Boolean = false,
     val profileUploadError: String? = null,
-
-    // Para salvar perfil
     val isSavingProfile: Boolean = false,
     val profileSaveSuccessMessage: String? = null,
     val profileSaveErrorMessage: String? = null
@@ -49,13 +43,12 @@ class ProfileViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val userRepository: UserRepository,
     private val storage: FirebaseStorage,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore // Injeção direta do Firestore pode ser revista se toda lógica estiver no repo
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
-    // Formatter para converter Long (UTC millis) para String ("dd/MM/yyyy" em UTC) e vice-versa
     private val utcDateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
@@ -64,12 +57,11 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             authRepository.getAuthState().collectLatest { authState ->
                 _uiState.update { currentState ->
-                    // Evita sobrescrever campos editáveis se já estiverem em edição,
-                    // a menos que o usuário tenha mudado.
                     val isDifferentUser = currentState.user?.uid != null && currentState.user.uid != authState.user?.uid
                     val shouldResetEditableFields = currentState.editableUsername.isEmpty() ||
                             currentState.editableEmail.isEmpty() ||
                             currentState.editableBirthDate.isEmpty() ||
+                            currentState.editableStatus.isEmpty() || // Condição para resetar o status editável
                             isDifferentUser
 
                     currentState.copy(
@@ -77,7 +69,9 @@ class ProfileViewModel @Inject constructor(
                         isLoadingUser = authState.isInitialLoading,
                         editableUsername = if (shouldResetEditableFields) authState.user?.username ?: "" else currentState.editableUsername,
                         editableEmail = if (shouldResetEditableFields) authState.user?.email ?: "" else currentState.editableEmail,
-                        editableBirthDate = if (shouldResetEditableFields) authState.user?.birthDate ?: "" else currentState.editableBirthDate
+                        editableBirthDate = if (shouldResetEditableFields) authState.user?.birthDate ?: "" else currentState.editableBirthDate,
+                        // ATUALIZADO: Ler de userSetStatus
+                        editableStatus = if (shouldResetEditableFields) authState.user?.userSetStatus ?: "" else currentState.editableStatus
                     )
                 }
             }
@@ -93,7 +87,6 @@ class ProfileViewModel @Inject constructor(
     }
 
     fun onBirthDateTextChanged(newBirthDate: String) {
-        // Geralmente não será chamado se o campo for readOnly e apenas o DatePicker for usado
         _uiState.update { it.copy(editableBirthDate = newBirthDate) }
     }
 
@@ -107,14 +100,16 @@ class ProfileViewModel @Inject constructor(
 
     fun onBirthDateSelected(dateInMillis: Long?) {
         if (dateInMillis != null) {
-            // dateInMillis é da meia-noite UTC do dia selecionado.
-            // Formate-o usando o utcDateFormatter para obter "dd/MM/yyyy" desse dia em UTC.
             val selectedDateString = utcDateFormatter.format(Date(dateInMillis))
             _uiState.update { it.copy(editableBirthDate = selectedDateString) }
         }
         onDatePickerDialogDismissed()
     }
 
+    // Esta função atualiza o editableStatus no UIState, que representa o userSetStatus
+    fun onStatusChanged(newUserSetStatus: String) {
+        _uiState.update { it.copy(editableStatus = newUserSetStatus) }
+    }
 
     fun saveProfile() {
         val currentUser = _uiState.value.user
@@ -125,7 +120,9 @@ class ProfileViewModel @Inject constructor(
 
         val newUsername = _uiState.value.editableUsername.trim()
         val newEmail = _uiState.value.editableEmail.trim()
-        val newBirthDate = _uiState.value.editableBirthDate.trim() // Já deve estar "dd/MM/yyyy" (UTC day)
+        val newBirthDate = _uiState.value.editableBirthDate.trim()
+        // newEditableStatus representa o novo userSetStatus que o usuário selecionou
+        val newEditableStatus = _uiState.value.editableStatus.trim()
 
         if (newUsername.isEmpty()) {
             _uiState.update { it.copy(profileSaveErrorMessage = "Nome de usuário não pode estar vazio.") }
@@ -134,11 +131,15 @@ class ProfileViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isSavingProfile = true, profileSaveErrorMessage = null, profileSaveSuccessMessage = null) }
+
+            // O parâmetro 'newStatus' aqui será o valor que queremos salvar como 'userSetStatus'
+            // Precisaremos garantir que UserRepository.updateUserProfile lide com isso corretamente.
             val result = userRepository.updateUserProfile(
                 userId = currentUser.uid,
                 newUsername = newUsername,
                 newEmail = newEmail.ifBlank { null },
-                newBirthDate = newBirthDate.ifBlank { null } // Salva a string "dd/MM/yyyy" (UTC day)
+                newBirthDate = newBirthDate.ifBlank { null },
+                newStatus = newEditableStatus // Este valor deve ser salvo como userSetStatus
             )
 
             result.onSuccess {
@@ -146,7 +147,9 @@ class ProfileViewModel @Inject constructor(
                     val updatedUser = currentState.user?.copy(
                         username = newUsername,
                         email = newEmail.ifBlank { currentState.user.email },
-                        birthDate = newBirthDate.ifBlank { currentState.user.birthDate }
+                        birthDate = newBirthDate.ifBlank { currentState.user.birthDate },
+                        // ATUALIZADO: Atualizar userSetStatus no objeto User local
+                        userSetStatus = newEditableStatus.ifBlank { currentState.user.userSetStatus }
                     )
                     currentState.copy(
                         isSavingProfile = false,
@@ -154,7 +157,8 @@ class ProfileViewModel @Inject constructor(
                         user = updatedUser,
                         editableUsername = newUsername,
                         editableEmail = newEmail,
-                        editableBirthDate = newBirthDate // Mantém o valor formatado
+                        editableBirthDate = newBirthDate,
+                        editableStatus = newEditableStatus // Mantém o campo editável em sincronia
                     )
                 }
             }.onFailure { exception ->
@@ -181,9 +185,10 @@ class ProfileViewModel @Inject constructor(
                 val uploadTask = storageRef.putFile(uri).await()
                 val downloadUrl = uploadTask.storage.downloadUrl.await().toString()
                 firestore.collection("users").document(currentUser.uid)
-                    .update("profilePictureUrl", downloadUrl)
+                    .update("profilePictureUrl", downloadUrl) // Isso atualiza diretamente no Firestore
                     .await()
                 _uiState.update { currentState ->
+                    // Atualiza o user local com a nova URL da foto
                     val updatedUserWithPic = currentState.user?.copy(profilePictureUrl = downloadUrl)
                     currentState.copy(
                         isUploadingProfilePicture = false,
@@ -191,6 +196,7 @@ class ProfileViewModel @Inject constructor(
                     )
                 }
             } catch (e: Exception) {
+                Log.e("ProfileViewModel", "Falha no upload da foto de perfil", e)
                 _uiState.value = _uiState.value.copy(
                     isUploadingProfilePicture = false,
                     profileUploadError = "Falha no upload: ${e.localizedMessage ?: "Erro desconhecido"}"
@@ -211,7 +217,13 @@ class ProfileViewModel @Inject constructor(
         _uiState.update { it.copy(profileSaveErrorMessage = null) }
     }
 
+    // ATENÇÃO: A lógica de signOut precisará ser melhorada para definir presenceStatus="Offline"
+    // e lastSeen no Firestore. Isso será feito em uma etapa posterior com o sistema de presença.
     fun signOut() {
+        //viewModelScope.launch {
+        // Futuramente: userRepository.setUserOffline(currentUser.uid)
+        //}
         authRepository.signOut()
     }
 }
+

@@ -1,6 +1,5 @@
 package com.marcos.chatapplication.ui.screens
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -15,14 +14,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.marcos.chatapplication.R
-import com.marcos.chatapplication.ui.viewmodel.OtherUserProfileUiState
 import com.marcos.chatapplication.ui.viewmodel.OtherUserProfileViewModel
+import com.marcos.chatapplication.util.rememberFormattedUserStatus // NOVO IMPORT
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,14 +62,15 @@ fun OtherUserProfileScreen(
                     Text(
                         text = uiState.error ?: "Erro desconhecido",
                         color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyLarge
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center
                     )
                 }
                 uiState.user != null -> {
                     val user = uiState.user!!
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp) // Mantém o espaçamento geral
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         AsyncImage(
                             model = user.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder } ?: R.drawable.ic_person_placeholder,
@@ -82,22 +83,46 @@ fun OtherUserProfileScreen(
                             error = painterResource(id = R.drawable.ic_person_placeholder)
                         )
 
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         Text(
                             text = user.username ?: "Nome não disponível",
                             fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+
+                        // Exibição do Status de Presença (Online/Visto por último)
+                        val formattedPresenceStatus = rememberFormattedUserStatus(user = user)
+                        if (formattedPresenceStatus.isNotBlank()) {
+                            Text(
+                                text = formattedPresenceStatus,
+                                fontSize = 16.sp,
+                                color = if (user.presenceStatus == "Online") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        Text(
+                            text = user.userSetStatus?.takeIf { it.isNotBlank() } ?: "Disponível",
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, // Mudado para onSurfaceVariant para não competir com o status "Online"
+                            textAlign = TextAlign.Center
                         )
 
                         Text(
                             text = user.email ?: "Email não disponível",
-                            fontSize = 16.sp
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
                         )
 
-                        // ADICIONADO: Exibição da Data de Nascimento
                         if (!user.birthDate.isNullOrBlank()) {
                             Text(
                                 text = "Nascimento: ${user.birthDate}",
-                                fontSize = 16.sp // Mesmo tamanho do email para consistência
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
                             )
                         }
                     }

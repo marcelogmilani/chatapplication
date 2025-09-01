@@ -1,5 +1,7 @@
 package com.marcos.chatapplication.domain.model
 
+import com.google.firebase.firestore.FieldValue
+
 data class User(
     val uid: String = "",
     val email: String? = null,
@@ -9,5 +11,12 @@ data class User(
     val profilePictureUrl: String? = null,
     val fcmToken: String? = null,
     val birthDate: String? = null,
-    val contacts: List<String> = emptyList()
+    val contacts: List<String> = emptyList(),
+
+    // Status definido pelo usuário (ex: "Disponível", "Ocupado")
+    val userSetStatus: String? = null, // Anteriormente 'status', default alterado
+
+    // Status de presença automática
+    val presenceStatus: String? = "Offline", // Novo campo, default para "Offline"
+    val lastSeen: Long? = null  // Timestamp em milissegundos, já existente
 )

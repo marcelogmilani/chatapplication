@@ -174,7 +174,13 @@ class UserRepositoryImpl @Inject constructor(
         } catch (e: Exception) { Result.failure(e) }
     }
 
-    override suspend fun updateUserProfile(userId: String, newUsername: String?, newEmail: String?, newBirthDate: String?): Result<Unit> {
+    override suspend fun updateUserProfile(
+        userId: String,
+        newUsername: String?,
+        newEmail: String?,
+        newBirthDate: String?,
+        newStatus: String? // Este parâmetro agora representa o userSetStatus
+    ): Result<Unit> {
         if (userId.isBlank()) {
             return Result.failure(IllegalArgumentException("User ID cannot be blank."))
         }
@@ -186,22 +192,46 @@ class UserRepositoryImpl @Inject constructor(
                 if (it.isNotBlank()) {
                     updatesMap["username"] = it
                     updatesMap["username_lowercase"] = it.lowercase()
-                } else {
-                    // Tratar caso de username em branco se necessário, ou validar antes no ViewModel
                 }
             }
 
             newEmail?.let {
-
                 updatesMap["email"] = it
             }
 
             newBirthDate?.let {
-
                 updatesMap["birthDate"] = it
             }
 
+            // ATUALIZADO: Salvar o newStatus no campo "userSetStatus"
+            newStatus?.let {
+                // Se o status for uma string vazia, você pode querer removê-lo
+                // ou definir um valor padrão. O dropdown não deve enviar string vazia
+                // se "Disponível" for o default para UI quando o valor real for vazio/nulo.
+                // Se você quiser explicitamente salvar uma string vazia como userSetStatus:
+                // updatesMap["userSetStatus"] = it
+                // Se você quiser que uma string vazia no dropdown signifique "sem userSetStatus" (nulo):
+                if (it.isNotBlank()) { // Salva apenas se não for branco.
+                    updatesMap["userSetStatus"] = it
+                } else {
+                    // Se o status editado for explicitamente tornado branco
+                    // (ex: por uma opção "Limpar Status" no dropdown, que não temos agora),
+                    // você pode querer deletar o campo ou setá-lo para null.
+                    // Por enquanto, se vier branco, não faz nada,
+                    // mas o ProfileViewModel deve enviar o valor selecionado ("Disponível", "Ocupado").
+                    // Se o dropdown envia "Disponível", será salvo "Disponível".
+                    // Se o userSetStatus original era "Ocupado" e o usuário seleciona "Disponível",
+                    // "Disponível" será salvo.
+                    updatesMap["userSetStatus"] = it // Salva o status como está (ex: "Disponível", "Ocupado")
+                    // Se o usuário pudesse limpar para uma string vazia,
+                    // e você quisesse tratar isso como "sem status definido",
+                    // poderia ser: FieldValue.delete() ou null.
+                    // Mas o dropdown atual não permite isso.
+                }
+            }
+
             if (updatesMap.isEmpty()) {
+                // Se nenhum campo foi modificado (incluindo o userSetStatus), não faz nada.
                 return Result.success(Unit)
             }
 
@@ -209,7 +239,7 @@ class UserRepositoryImpl @Inject constructor(
                 .update(updatesMap)
                 .await()
 
-            Log.d("UserRepositoryImpl", "User profile updated successfully for userId: $userId")
+            Log.d("UserRepositoryImpl", "User profile updated successfully for userId: $userId. Updates: $updatesMap")
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e("UserRepositoryImpl", "Error updating user profile for userId: $userId", e)

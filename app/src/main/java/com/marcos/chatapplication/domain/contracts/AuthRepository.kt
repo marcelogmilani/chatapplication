@@ -20,4 +20,7 @@ interface AuthRepository {
     fun signOut()
 
     suspend fun checkIfPhoneNumberExists(phoneNumber: String): Result<Boolean>
+
+
+    suspend fun updateUserStatus(userId: String, presenceStatus: String, lastSeen: Long?)
 }
