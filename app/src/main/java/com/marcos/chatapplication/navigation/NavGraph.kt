@@ -26,13 +26,18 @@ import com.marcos.chatapplication.ui.screens.OtherUserProfileScreen
 import com.marcos.chatapplication.ui.screens.ProfileScreen
 import com.marcos.chatapplication.ui.screens.RegistrationScreen
 import com.marcos.chatapplication.ui.screens.UserSearchScreen
+import com.marcos.chatapplication.ui.screens.MediaViewScreen
 import com.marcos.chatapplication.ui.viewmodel.LoginViewModel
 import com.marcos.chatapplication.ui.viewmodel.RegistrationViewModel
+
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 sealed class Screen(val route: String) {
     object Login : Screen("login_screen")
     object Home : Screen("home_screen")
-    object Profile : Screen("profile_screen") // Seu perfil (logado)
+    object Profile : Screen("profile_screen")
     object Chat : Screen("chat_screen/{conversationId}") {
         fun createRoute(conversationId: String) = "chat_screen/$conversationId"
     }
@@ -45,7 +50,6 @@ sealed class Screen(val route: String) {
     object CreateGroup : Screen("create_group_screen")
     object FinalizeGroup : Screen("finalize_group_screen/{memberIds}") {
         fun createRoute(memberIds: List<String>): String {
-            // Juntamos a lista de IDs numa única string separada por vírgulas
             val ids = memberIds.joinToString(",")
             return "finalize_group_screen/$ids"
         }
@@ -57,6 +61,18 @@ sealed class Screen(val route: String) {
 
     object AddParticipants : Screen("add_participants/{conversationId}") {
         fun createRoute(conversationId: String) = "add_participants/$conversationId"
+    }
+
+    object MediaView : Screen("media_view_screen/{mediaType}/{mediaUrl}") {
+        // Argumentos da rota para MediaView
+        const val ARG_MEDIA_TYPE = "mediaType"
+        const val ARG_MEDIA_URL = "mediaUrl" // Este é o nome do parâmetro na string da rota
+
+        fun createRoute(mediaType: String, mediaUrl: String): String {
+            Log.d("NavGraphCreateRoute", "Original mediaUrl: $mediaUrl for navigation")
+            val encodedUrl = URLEncoder.encode(mediaUrl, StandardCharsets.UTF_8.toString())
+            return "media_view_screen/$mediaType/$encodedUrl"
+        }
     }
 
 }
@@ -137,7 +153,6 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
             route = Screen.Chat.route,
             arguments = listOf(navArgument("conversationId") { type = NavType.StringType })
         ) { backStackEntry ->
-            // Extrair o conversationId dos argumentos
             val conversationId = backStackEntry.arguments?.getString("conversationId") ?: ""
 
             ChatScreen(
@@ -208,6 +223,33 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
             OtherUserProfileScreen(navController = navController)
         }
 
+        composable(
+            route = Screen.MediaView.route,
+            arguments = listOf(
+                navArgument(Screen.MediaView.ARG_MEDIA_TYPE) { type = NavType.StringType },
+                navArgument(Screen.MediaView.ARG_MEDIA_URL) { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val mediaType = backStackEntry.arguments?.getString(Screen.MediaView.ARG_MEDIA_TYPE)
+            // A URL obtida dos argumentos já está no formato correto (decodificada uma vez pela navegação).
+            // Não precisamos decodificá-la novamente aqui.
+            val mediaUrlFromArgs = backStackEntry.arguments?.getString(Screen.MediaView.ARG_MEDIA_URL)
+
+            if (mediaType != null && mediaUrlFromArgs != null) {
+                // Log para mostrar a URL recebida dos argumentos e que será passada para a tela
+                Log.d("NavGraph", "MediaView received URL from args: $mediaUrlFromArgs")
+
+                // Passa a mediaUrlFromArgs diretamente para MediaViewScreen
+                MediaViewScreen(navController = navController, mediaType = mediaType, mediaUrl = mediaUrlFromArgs)
+            } else {
+                // Lidar com o caso de argumentos nulos, talvez voltar ou mostrar um erro
+                Log.e("NavGraph", "MediaView: Tipo de mídia ou URL (codificada) não encontrados nos argumentos.")
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Erro: Argumentos da MediaView não encontrados.")
+                }
+            }
+        }
+
         composable("edit_group/{conversationId}") { backStackEntry ->
             val conversationId = backStackEntry.arguments?.getString("conversationId") ?: ""
             EditGroupScreen(conversationId, navController)
@@ -217,5 +259,6 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
             val conversationId = backStackEntry.arguments?.getString("conversationId") ?: ""
             AddParticipantsScreen(conversationId, navController)
         }
+
     }
 }
