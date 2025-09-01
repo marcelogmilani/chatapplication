@@ -30,10 +30,11 @@ object MessageStatus {
 object MessageType {
     const val TEXT = "TEXT"
     const val IMAGE = "IMAGE"
-    const val VIDEO = "VIDEO" // Mantendo para futuras implementações
-    const val AUDIO = "AUDIO" // Mantendo para futuras implementações
-    const val FILE = "FILE"   // Mantendo para futuras implementações
-    const val IMAGE_LABEL = "📷 Imagem" // NOVO LABEL ADICIONADO
+    const val VIDEO = "VIDEO"
+    const val AUDIO = "AUDIO"
+    const val FILE = "FILE"
+    const val IMAGE_LABEL = "📷 Imagem"
+    const val VIDEO_LABEL = "📹 Vídeo"
 }
 
 data class Message(
@@ -44,6 +45,8 @@ data class Message(
     val status: String = MessageStatus.SENT,
     val type: String = MessageType.TEXT,
     val mediaUrl: String? = null,
+    val thumbnailUrl: String? = null, // Adicionado para miniatura
     val fileName: String? = null,
-    val fileSize: Long? = null
+    val fileSize: Long? = null,
+    val duration: Long? = null      // Adicionado para duração do vídeo
 )
