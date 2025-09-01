@@ -20,17 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,13 +40,13 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
-import com.marcos.chatapplication.R // Para o placeholder
+import com.marcos.chatapplication.R
 import com.marcos.chatapplication.domain.model.Conversation
 import com.marcos.chatapplication.domain.model.Message
 import com.marcos.chatapplication.domain.model.MessageStatus
 import com.marcos.chatapplication.domain.model.MessageType
 import com.marcos.chatapplication.domain.model.User
-import com.marcos.chatapplication.navigation.Screen // Para navegação
+import com.marcos.chatapplication.navigation.Screen
 import com.marcos.chatapplication.ui.viewmodel.ChatViewModel
 import com.marcos.chatapplication.util.DateFormatter
 import kotlinx.coroutines.launch
@@ -62,6 +54,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
+    conversationId: String,
     navController: NavController,
     viewModel: ChatViewModel = hiltViewModel()
 ) {
@@ -75,16 +68,22 @@ fun ChatScreen(
     val pinnedMessageId = conversation?.pinnedMessageId
     val conversationId = conversation?.id
 
-    // NOVO: Estado para a URI da imagem em pré-visualização
     var imageUriForPreview by remember { mutableStateOf<Uri?>(null) }
 
-    // ATUALIZADO: imagePickerLauncher agora define imageUriForPreview
+    val currentUserId = Firebase.auth.currentUser?.uid
+    val isParticipant = remember(uiState.conversationDetails) {
+        val participants = uiState.conversationDetails?.conversation?.participants ?: emptyList()
+        currentUserId in participants
+    }
+
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri: Uri? ->
-            if (uri != null) {
+            if (uri != null && isParticipant) {
                 Log.d("ChatScreen", "Selected Image URI for preview: $uri")
-                imageUriForPreview = uri // Define a URI para pré-visualização
+                imageUriForPreview = uri
+            } else if (!isParticipant) {
+                Log.d("ChatScreen", "Usuário não é participante, não pode enviar imagens")
             } else {
                 Log.d("ChatScreen", "No image selected for preview.")
             }
@@ -115,44 +114,53 @@ fun ChatScreen(
                     navController = navController,
                     conversation = conversation,
                     otherParticipant = uiState.conversationDetails?.otherParticipant,
-                    onSearchClick = { isSearchVisible = true }
+                    onSearchClick = { isSearchVisible = true },
+                    onEditGroupClick = {
+                        if (conversation?.isGroup == true && conversationId != null && isParticipant) {
+                            navController.navigate(Screen.EditGroup.createRoute(conversationId))
+                        }
+                    }
                 )
             }
         },
         bottomBar = {
-            // ATUALIZADO: Chamada para MessageInput e lógica de onSendClick
-            MessageInput(
-                text = text,
-                onTextChange = { text = it },
-                onSendClick = {
-                    val currentPreviewUri = imageUriForPreview
-                    if (currentPreviewUri != null) {
-                        // Se há uma imagem em pré-visualização, envie-a
-                        if (conversationId != null) {
-                            // Enviar imagem (e texto como legenda, se houver)
-                            // O texto será a legenda. Se estiver em branco, passamos null.
-                            viewModel.sendImageMessage(currentPreviewUri, conversationId, text.ifBlank { null })
-                            imageUriForPreview = null // Limpar pré-visualização
-                            text = "" // Limpar campo de texto
-                        } else {
-                            Log.e("ChatScreen", "Conversation ID is null, cannot send image with caption.")
+            if(isParticipant) {
+                MessageInput(
+                    text = text,
+                    onTextChange = { text = it },
+                    onSendClick = {
+                        val currentPreviewUri = imageUriForPreview
+                        if (currentPreviewUri != null) {
+                            if (conversationId != null) {
+                                viewModel.sendImageMessage(
+                                    currentPreviewUri,
+                                    conversationId,
+                                    text.ifBlank { null })
+                                imageUriForPreview = null
+                                text = ""
+                            } else {
+                                Log.e(
+                                    "ChatScreen",
+                                    "Conversation ID is null, cannot send image with caption."
+                                )
+                            }
+                        } else if (text.isNotBlank()) {
+                            viewModel.sendMessage(text)
+                            text = ""
                         }
-                    } else if (text.isNotBlank()) {
-                        // Senão, se houver apenas texto, envie mensagem de texto normal
-                        viewModel.sendMessage(text)
-                        text = ""
-                    }
-                },
-                onAttachmentClick = {
-                    Log.d("ChatScreen", "Attachment button clicked! Launching image picker.")
-                    imagePickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
-                // NOVOS PARÂMETROS PASSADOS PARA MessageInput
-                previewImageUri = imageUriForPreview,
-                onRemovePreviewImage = { imageUriForPreview = null }
-            )
+                    },
+                    onAttachmentClick = {
+                        Log.d("ChatScreen", "Attachment button clicked! Launching image picker.")
+                        imagePickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    previewImageUri = imageUriForPreview,
+                    onRemovePreviewImage = { imageUriForPreview = null }
+                )
+            }else{
+                RemovedUserMessageBar()
+            }
         }
     ) { paddingValues ->
         Column(
@@ -163,7 +171,9 @@ fun ChatScreen(
             PinnedMessageBar(
                 conversation = conversation,
                 onUnpin = {
-                    viewModel.onPinMessage(null)
+                    if (isParticipant) {
+                        viewModel.onPinMessage(null)
+                    }
                 },
                 onClick = {
                     val index = uiState.messages.indexOfFirst { it.id == pinnedMessageId }
@@ -187,10 +197,35 @@ fun ChatScreen(
                         sender = sender,
                         isGroupChat = conversation?.isGroup == true,
                         isPinned = message.id == pinnedMessageId,
-                        onLongPress = { viewModel.onPinMessage(message) }
+                        onLongPress = {
+                            if (isParticipant) {
+                                viewModel.onPinMessage(message)
+                            }
+                        }
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun RemovedUserMessageBar() {
+    Surface(
+        shadowElevation = 4.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Você não é mais participante deste grupo",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -201,8 +236,15 @@ fun ChatTopAppBar(
     navController: NavController,
     conversation: Conversation?,
     otherParticipant: User?,
-    onSearchClick: () -> Unit
+    onSearchClick: () -> Unit,
+    onEditGroupClick: () -> Unit
 ) {
+    val currentUserId = Firebase.auth.currentUser?.uid
+    val isParticipant = remember(conversation) {
+        val participants = conversation?.participants ?: emptyList()
+        currentUserId in participants
+    }
+
     TopAppBar(
         title = {
             Row(
@@ -248,6 +290,11 @@ fun ChatTopAppBar(
         actions = {
             IconButton(onClick = onSearchClick) {
                 Icon(Icons.Default.Search, contentDescription = "Buscar Mensagens")
+            }
+            if (conversation?.isGroup == true && isParticipant) {
+                IconButton(onClick = onEditGroupClick) {
+                    Icon(Icons.Default.Settings, contentDescription = "Editar Grupo")
+                }
             }
         }
     )
@@ -327,8 +374,8 @@ fun MessageBubble(
                             model = ImageRequest.Builder(LocalContext.current)
                                 .data(message.mediaUrl)
                                 .crossfade(true)
-                                .placeholder(R.drawable.ic_image_placeholder) // CRIE ESTE DRAWABLE
-                                .error(R.drawable.ic_broken_image_placeholder)   // CRIE ESTE DRAWABLE
+                                .placeholder(R.drawable.ic_image_placeholder)
+                                .error(R.drawable.ic_broken_image_placeholder)
                                 .build(),
                             contentDescription = message.fileName ?: "Imagem",
                             modifier = Modifier
@@ -341,7 +388,7 @@ fun MessageBubble(
                         val caption = if (!message.text.isNullOrBlank() && message.text != MessageType.IMAGE_LABEL) {
                             message.text
                         } else {
-                            null // Não mostrar nada se o texto for o label padrão da imagem ou estiver em branco
+                            null
                         }
 
                         if (caption != null) {
@@ -351,7 +398,6 @@ fun MessageBubble(
                                 modifier = Modifier.padding(top = 4.dp)
                             )
                         }
-
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -370,7 +416,6 @@ fun MessageBubble(
                         }
                     }
                 } else {
-
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
                             text = message.text ?: "",
@@ -403,7 +448,6 @@ fun MessageBubble(
         }
     }
 }
-
 
 @Composable
 fun MessageStatusIcon(status: String) {
@@ -534,7 +578,6 @@ fun PinnedMessageBar(
     }
 }
 
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MessageInput(
@@ -549,30 +592,29 @@ fun MessageInput(
         shadowElevation = 8.dp,
         color = MaterialTheme.colorScheme.surface
     ) {
-        Column { // Envolver em Column para adicionar o preview acima da Row de input
-            // Pré-visualização da Imagem (se houver)
+        Column {
             if (previewImageUri != null) {
-                Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)) { // Adicionado mais padding
+                Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)) {
                     AsyncImage(
                         model = previewImageUri,
                         contentDescription = "Pré-visualização da imagem",
                         modifier = Modifier
-                            .height(100.dp) // Altura da miniatura
+                            .height(100.dp)
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp)),
                         contentScale = ContentScale.Crop
                     )
-                    IconButton( // Botão para remover a pré-visualização
+                    IconButton(
                         onClick = onRemovePreviewImage,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(4.dp)
-                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f), CircleShape) // Cor de fundo semi-transparente
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f), CircleShape)
                     ) {
                         Icon(
                             Icons.Default.Clear,
                             contentDescription = "Remover pré-visualização",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer // Cor do ícone para bom contraste
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
@@ -581,7 +623,7 @@ fun MessageInput(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp, top = if (previewImageUri != null) 0.dp else 8.dp), // Ajuste de padding
+                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp, top = if (previewImageUri != null) 0.dp else 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onAttachmentClick) {
@@ -595,7 +637,7 @@ fun MessageInput(
                     value = text,
                     onValueChange = onTextChange,
                     modifier = Modifier.weight(1f),
-                    placeholder = { if (previewImageUri != null) Text("Adicionar legenda...") else Text("Digite uma mensagem...") }, // Placeholder dinâmico
+                    placeholder = { if (previewImageUri != null) Text("Adicionar legenda...") else Text("Digite uma mensagem...") },
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -610,7 +652,6 @@ fun MessageInput(
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(
                     onClick = onSendClick,
-                    // Habilitar se houver texto OU imagem em pré-visualização
                     enabled = text.isNotBlank() || previewImageUri != null,
                     colors = IconButtonDefaults.iconButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary,

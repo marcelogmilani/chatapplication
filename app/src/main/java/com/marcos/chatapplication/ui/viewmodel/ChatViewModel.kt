@@ -18,8 +18,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -103,6 +105,13 @@ class ChatViewModel @Inject constructor(
     fun sendMessage(text: String) {
         if (text.isBlank()) return
 
+        // Verificar se o usuário ainda é participante do grupo
+        if (!isUserParticipant(conversationId)) {
+            Log.e("ChatViewModel", "Usuário não é mais participante do grupo")
+            // Você pode mostrar um erro para o usuário aqui
+            return
+        }
+
         viewModelScope.launch {
             Log.d("ChatViewModel", "Attempting to send message: $text in conversation: $conversationId")
             val result = chatRepository.sendMessage(conversationId, text.trim())
@@ -122,6 +131,12 @@ class ChatViewModel @Inject constructor(
 
     // ATUALIZADO: sendImageMessage agora aceita 'caption' opcional
     fun sendImageMessage(uri: Uri, convId: String, caption: String? = null) {
+
+        if (!isUserParticipant(convId)) {
+            Log.e("ChatViewModel", "Usuário não é mais participante do grupo")
+            return
+        }
+
         Log.d("ChatViewModel", "sendImageMessage called with URI: $uri, for conversation: $convId, caption: $caption")
         viewModelScope.launch {
             try {
@@ -182,5 +197,98 @@ class ChatViewModel @Inject constructor(
             }
         }
     }
+
+    private val _groupActionState = MutableStateFlow<GroupActionState>(GroupActionState.Idle)
+    val groupActionState: StateFlow<GroupActionState> = _groupActionState.asStateFlow()
+
+    fun updateGroupName(conversationId: String, newName: String) {
+        viewModelScope.launch {
+            _groupActionState.value = GroupActionState.Loading
+            val result = chatRepository.updateGroupName(conversationId, newName)
+            if (result.isSuccess) {
+                _groupActionState.value = GroupActionState.Success("Nome do grupo atualizado")
+            } else {
+                val errorMessage = result.exceptionOrNull()?.message ?: "Erro ao atualizar nome"
+                _groupActionState.value = GroupActionState.Error(errorMessage)
+            }
+        }
+    }
+
+    fun addParticipantsToGroup(conversationId: String, userIds: List<String>) {
+        viewModelScope.launch {
+            _groupActionState.value = GroupActionState.Loading
+            val result = chatRepository.addParticipantsToGroup(conversationId, userIds)
+            if (result.isSuccess) {
+                _groupActionState.value = GroupActionState.Success("Participantes adicionados")
+            } else {
+                val errorMessage = result.exceptionOrNull()?.message ?: "Erro ao adicionar participantes"
+                _groupActionState.value = GroupActionState.Error(errorMessage)
+            }
+        }
+    }
+
+    fun removeParticipantFromGroup(conversationId: String, userId: String) {
+        viewModelScope.launch {
+            _groupActionState.value = GroupActionState.Loading
+            val result = chatRepository.removeParticipantFromGroup(conversationId, userId)
+            if (result.isSuccess) {
+                _groupActionState.value = GroupActionState.Success("Participante removido")
+            } else {
+                val errorMessage = result.exceptionOrNull()?.message ?: "Erro ao remover participante"
+                _groupActionState.value = GroupActionState.Error(errorMessage)
+            }
+        }
+    }
+
+    fun clearGroupActionState() {
+        _groupActionState.value = GroupActionState.Idle
+    }
+
+    suspend fun getAvailableUsers(conversationId: String): List<User> {
+        return try {
+            // Obter todos os usuários disponíveis
+            val allUsers = chatRepository.getAvailableUsers().getOrElse { emptyList() }
+
+            // Obter participantes atuais do grupo
+            val conversationDetails = chatRepository.getConversationDetails(conversationId).first()
+            val currentParticipants = conversationDetails?.conversation?.participants ?: emptyList()
+
+            // Filtrar usuários que não estão no grupo e ordenar por nome
+            allUsers
+                .filter { user -> user.uid !in currentParticipants }
+                .sortedBy { it.username?.lowercase() } // Ordem alfabética case-insensitive
+        } catch (e: Exception) {
+            Log.e("ChatViewModel", "Error getting available users: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    fun loadConversationDetails(conversationId: String) {
+        viewModelScope.launch {
+            // Esta função já existe no repositório através do getConversationDetails
+            // O Flow já está sendo observado no uiState
+        }
+    }
+
+    fun resetGroupActionState() {
+        _groupActionState.value = GroupActionState.Idle
+    }
+
+    fun isUserParticipant(conversationId: String, userId: String? = null): Boolean {
+        val currentUserId = userId ?: Firebase.auth.currentUser?.uid
+        val participants = uiState.value.conversationDetails?.conversation?.participants ?: emptyList()
+        return currentUserId in participants
+    }
+
+
 }
+
+
+sealed class GroupActionState {
+    object Idle : GroupActionState()
+    object Loading : GroupActionState()
+    data class Success(val message: String) : GroupActionState()
+    data class Error(val message: String) : GroupActionState()
+}
+
 

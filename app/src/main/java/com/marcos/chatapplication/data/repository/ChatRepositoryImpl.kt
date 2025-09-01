@@ -413,4 +413,135 @@ class ChatRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+
+    override suspend fun updateGroupName(conversationId: String, newName: String): Result<Unit> {
+        return try {
+            val currentUserId = firebaseAuth.currentUser?.uid ?:
+            return Result.failure(Exception("Usuário não autenticado"))
+
+            // Verifica se a conversa é um grupo e se o usuário é participante
+            val conversationDoc = firestore.collection("conversations").document(conversationId).get().await()
+            val participants = conversationDoc.get("participants") as? List<String> ?: emptyList()
+
+            if (!participants.contains(currentUserId)) {
+                return Result.failure(Exception("Usuário não é participante do grupo"))
+            }
+
+            if (conversationDoc.getBoolean("isGroup") != true) {
+                return Result.failure(Exception("Esta conversa não é um grupo"))
+            }
+
+            firestore.collection("conversations").document(conversationId)
+                .update("groupName", newName)
+                .await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("ChatRepositoryImpl", "Erro ao atualizar nome do grupo", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun addParticipantsToGroup(conversationId: String, userIds: List<String>): Result<Unit> {
+        return try {
+            val currentUserId = firebaseAuth.currentUser?.uid ?:
+            return Result.failure(Exception("Usuário não autenticado"))
+
+            val conversationDoc = firestore.collection("conversations").document(conversationId).get().await()
+            val currentParticipants = conversationDoc.get("participants") as? List<String> ?: emptyList()
+
+            if (!currentParticipants.contains(currentUserId)) {
+                return Result.failure(Exception("Usuário não é participante do grupo"))
+            }
+
+            if (conversationDoc.getBoolean("isGroup") != true) {
+                return Result.failure(Exception("Esta conversa não é um grupo"))
+            }
+
+            val newParticipants = (currentParticipants + userIds).distinct()
+
+            firestore.collection("conversations").document(conversationId)
+                .update("participants", newParticipants)
+                .await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("ChatRepositoryImpl", "Erro ao adicionar participantes", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun removeParticipantFromGroup(conversationId: String, userId: String): Result<Unit> {
+        return try {
+            val currentUserId = firebaseAuth.currentUser?.uid ?:
+            return Result.failure(Exception("Usuário não autenticado"))
+
+            val conversationDoc = firestore.collection("conversations").document(conversationId).get().await()
+            val currentParticipants = conversationDoc.get("participants") as? List<String> ?: emptyList()
+
+            if (!currentParticipants.contains(currentUserId)) {
+                return Result.failure(Exception("Usuário não é participante do grupo"))
+            }
+
+            if (conversationDoc.getBoolean("isGroup") != true) {
+                return Result.failure(Exception("Esta conversa não é um grupo"))
+            }
+
+            // Não permite remover a si mesmo (opcional, depende da sua regra de negócio)
+            if (userId == currentUserId) {
+                return Result.failure(Exception("Não é possível remover a si mesmo do grupo"))
+            }
+
+            val newParticipants = currentParticipants.filter { it != userId }
+
+            // Se não houver mais participantes, deleta o grupo (opcional)
+            if (newParticipants.isEmpty()) {
+                firestore.collection("conversations").document(conversationId).delete().await()
+                return Result.success(Unit)
+            }
+
+            firestore.collection("conversations").document(conversationId)
+                .update("participants", newParticipants)
+                .await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("ChatRepositoryImpl", "Erro ao remover participante", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getGroupDetails(conversationId: String): Result<Conversation> {
+        return try {
+            val doc = firestore.collection("conversations").document(conversationId).get().await()
+            val conversation = doc.toObject(Conversation::class.java)?.copy(id = doc.id)
+                ?: return Result.failure(Exception("Conversa não encontrada"))
+
+            Result.success(conversation)
+        } catch (e: Exception) {
+            Log.e("ChatRepositoryImpl", "Erro ao buscar detalhes do grupo", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getAvailableUsers(): Result<List<User>> {
+        return try {
+            val currentUserId = firebaseAuth.currentUser?.uid
+            if (currentUserId == null) {
+                return Result.failure(Exception("Usuário não autenticado"))
+            }
+
+            val snapshot = firestore.collection("users").get().await()
+
+            val users = snapshot.documents.mapNotNull { document ->
+                document.toObject(User::class.java)?.copy(uid = document.id)
+            }.filter { it.uid != currentUserId }
+
+            Result.success(users)
+        } catch (e: Exception) {
+            Log.e("ChatRepositoryImpl", "Erro ao buscar usuários disponíveis", e)
+            Result.failure(e)
+        }
+    }
 }
+

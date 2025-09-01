@@ -15,8 +15,10 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.marcos.chatapplication.ui.screens.AddParticipantsScreen
 import com.marcos.chatapplication.ui.screens.ChatScreen
 import com.marcos.chatapplication.ui.screens.CreateGroupScreen
+import com.marcos.chatapplication.ui.screens.EditGroupScreen
 import com.marcos.chatapplication.ui.screens.FinalizeGroupScreen
 import com.marcos.chatapplication.ui.screens.HomeScreen
 import com.marcos.chatapplication.ui.screens.LoginScreen
@@ -48,6 +50,15 @@ sealed class Screen(val route: String) {
             return "finalize_group_screen/$ids"
         }
     }
+
+    object EditGroup : Screen("edit_group/{conversationId}") {
+        fun createRoute(conversationId: String) = "edit_group/$conversationId"
+    }
+
+    object AddParticipants : Screen("add_participants/{conversationId}") {
+        fun createRoute(conversationId: String) = "add_participants/$conversationId"
+    }
+
 }
 
 @Composable
@@ -125,8 +136,14 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
         composable(
             route = Screen.Chat.route,
             arguments = listOf(navArgument("conversationId") { type = NavType.StringType })
-        ) {
-            ChatScreen(navController = navController)
+        ) { backStackEntry ->
+            // Extrair o conversationId dos argumentos
+            val conversationId = backStackEntry.arguments?.getString("conversationId") ?: ""
+
+            ChatScreen(
+                conversationId = conversationId, // ← Passe o conversationId aqui
+                navController = navController
+            )
         }
 
         composable(route = Screen.Home.route) {
@@ -189,6 +206,16 @@ fun NavGraph(navController: NavHostController, startDestination: String) {
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) {
             OtherUserProfileScreen(navController = navController)
+        }
+
+        composable("edit_group/{conversationId}") { backStackEntry ->
+            val conversationId = backStackEntry.arguments?.getString("conversationId") ?: ""
+            EditGroupScreen(conversationId, navController)
+        }
+
+        composable("add_participants/{conversationId}") { backStackEntry ->
+            val conversationId = backStackEntry.arguments?.getString("conversationId") ?: ""
+            AddParticipantsScreen(conversationId, navController)
         }
     }
 }
