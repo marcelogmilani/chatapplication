@@ -55,17 +55,40 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    // --- FUNÇÃO MODIFICADA ---
     fun startPhoneNumberVerification(phoneNumber: String, activity: Activity) {
         if (phoneNumber.isBlank()) {
-            _uiState.update { it.copy(phoneNumberError = "Phone number cannot be empty") }
+            _uiState.update { it.copy(phoneNumberError = "O número não pode estar vazio") }
             return
         } else {
+            // Limpa erros anteriores
             _uiState.update { it.copy(phoneNumberError = null) }
         }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            authRepository.verifyPhoneNumber(phoneNumber, activity, verificationCallbacks)
+
+            val phoneCheckResult = authRepository.checkIfPhoneNumberExists(phoneNumber)
+
+            phoneCheckResult.onSuccess { exists ->
+                if (exists) {
+                    authRepository.verifyPhoneNumber(phoneNumber, activity, verificationCallbacks)
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            phoneNumberError = "This phone doesnt have and account. Try to registering first."
+                        )
+                    }
+                }
+            }.onFailure { exception ->
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "Falha ao verificar o número: ${exception.message}"
+                    )
+                }
+            }
         }
     }
 
@@ -105,15 +128,11 @@ class LoginViewModel @Inject constructor(
                 return@addOnCompleteListener
             }
 
-            // Obter o novo token de registo FCM
             val token = task.result
             Log.d("FCM", "Token FCM obtido: $token")
 
-            // Guardá-lo no Firestore através do repositório
             viewModelScope.launch {
                 userRepository.saveFcmToken(token).onFailure { exception ->
-                    // A falha em guardar o token não deve impedir o login.
-                    // Apenas registamos o erro.
                     Log.e("FCM", "Falha ao guardar o token FCM", exception)
                 }
             }
