@@ -143,13 +143,13 @@ fun ConversationItem(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // NOVO: Adiciona um ícone para distinguir visualmente os grupos
+        // Ícone para grupos ou foto de perfil para chats individuais
         if (conversation.isGroup) {
             Icon(
                 imageVector = Icons.Default.Group,
                 contentDescription = "Grupo",
-                modifier = Modifier.padding(end = 16.dp),
-                tint = Color.Gray
+                modifier = Modifier.size(48.dp), // Tamanho do ícone
+                tint = MaterialTheme.colorScheme.onSurfaceVariant // Cor mais sutil
             )
         } else {
             AsyncImage(
@@ -162,32 +162,42 @@ fun ConversationItem(
                 placeholder = painterResource(id = R.drawable.ic_person_placeholder),
                 error = painterResource(id = R.drawable.ic_person_placeholder)
             )
-
-            Spacer(modifier = Modifier.width(16.dp))
         }
 
+        Spacer(modifier = Modifier.width(16.dp)) // Espaçador após o ícone ou imagem
+
         Column(modifier = Modifier.weight(1f)) {
-            // LÓGICA ATUALIZADA PARA O NOME
             Text(
                 text = if (conversation.isGroup) {
                     conversation.groupName ?: "Grupo sem nome"
                 } else {
                     otherUser?.username ?: "Utilizador Desconhecido"
                 },
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.bodyLarge
             )
+
+            // Exibição do Status do Usuário (apenas para chats não em grupo)
+            if (!conversation.isGroup && otherUser != null) {
+                Text(
+                    text = otherUser.userSetStatus?.takeIf { it.isNotBlank() } ?: "Disponível",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
             Text(
                 text = conversation.lastMessage ?: "Nenhuma mensagem",
                 maxLines = 1,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onSurfaceVariant // Cor mais sutil para a mensagem
             )
         }
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(16.dp)) // Espaçador antes do timestamp
         Text(
             text = DateFormatter.formatFullTimestamp(conversation.lastMessageTimestamp),
             style = MaterialTheme.typography.bodySmall,
-            color = Color.Gray
+            color = MaterialTheme.colorScheme.onSurfaceVariant // Cor mais sutil
         )
     }
 }

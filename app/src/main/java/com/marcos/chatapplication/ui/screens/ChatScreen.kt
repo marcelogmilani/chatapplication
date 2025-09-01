@@ -352,7 +352,7 @@ fun MessageBubble(
                             modifier = if (!message.text.isNullOrBlank() && message.text != MessageType.VIDEO_LABEL)
                                 Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                             else
-                                Modifier 
+                                Modifier
                         ) {
                             Box(
                                 modifier = Modifier
@@ -400,7 +400,7 @@ fun MessageBubble(
                                     text = caption,
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(top = 4.dp)
-                                       )
+                                )
                             }
                             MessageMetadataRow(
                                 message,
@@ -457,7 +457,6 @@ fun MessageMetadataRow(
             Spacer(modifier = Modifier.width(4.dp))
         }
         Text(
-            // Usar formatMessageTimestamp que você já tinha, ou formatFullTimestamp se preferir mais detalhe
             text = DateFormatter.formatMessageTimestamp(message.timestamp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -477,6 +476,8 @@ fun ChatTopAppBar(
     otherParticipant: User?,
     onSearchClick: () -> Unit
 ) {
+    val userStatus = rememberFormattedUserStatus(otherParticipant)
+
     TopAppBar(
         title = {
             Row(
@@ -499,7 +500,11 @@ fun ChatTopAppBar(
                         modifier = Modifier.size(32.dp).clip(CircleShape)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = conversation.groupName ?: "Grupo")
+                    Text(
+                        text = conversation.groupName ?: "Grupo",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 } else {
                     AsyncImage(
                         model = otherParticipant?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
@@ -510,7 +515,23 @@ fun ChatTopAppBar(
                         error = painterResource(id = R.drawable.ic_person_placeholder)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = otherParticipant?.username ?: "Carregando...")
+                    Column {
+                        Text(
+                            text = otherParticipant?.username ?: "Carregando...",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium // Um pouco maior para o nome
+                        )
+                        if (userStatus.isNotBlank()) {
+                            Text(
+                                text = userStatus,
+                                style = MaterialTheme.typography.bodySmall, // Estilo menor para o status
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, // Cor suave
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -702,7 +723,7 @@ fun MessageInput(
                     }
                 }
             } else if (previewVideoUri != null) {
-                 Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+                Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)) // Fundo para a pré-visualização do vídeo
                     .fillMaxWidth()
                     .height(100.dp) // Altura da miniatura
@@ -791,5 +812,71 @@ fun MessageInput(
                 }
             }
         }
+    }
+}
+
+// ================== NOVAS FUNÇÕES ADICIONADAS ABAIXO ==================
+
+@Composable
+fun rememberFormattedUserStatus(user: User?): String {
+    val context = LocalContext.current
+    return remember(user?.presenceStatus, user?.lastSeen) { // Recalcula se o status ou lastSeen mudar
+        formatUserStatus(user, context)
+    }
+}
+
+fun formatUserStatus(user: User?, context: android.content.Context): String {
+    if (user == null) return ""
+
+    return when (user.presenceStatus) {
+        "Online" -> "Online"
+        "Offline" -> {
+            val lastSeenTime = user.lastSeen
+            if (lastSeenTime == null || lastSeenTime <= 0) {
+                "Offline" // Ou "Visto por último: desconhecido"
+            } else {
+                val now = System.currentTimeMillis()
+                val diff = now - lastSeenTime
+
+                val oneMinuteInMillis = 60 * 1000L
+                val oneHourInMillis = 60 * oneMinuteInMillis
+                // val oneDayInMillis = 24 * oneHourInMillis // Não usado diretamente com Calendar
+
+                when {
+                    diff < oneMinuteInMillis -> "Visto por último: agora mesmo"
+                    diff < oneHourInMillis -> {
+                        val minutes = TimeUnit.MILLISECONDS.toMinutes(diff)
+                        "Visto por último: há $minutes min"
+                    }
+                    else -> {
+                        val lastSeenCalendar = java.util.Calendar.getInstance().apply { timeInMillis = lastSeenTime }
+                        val todayCalendar = java.util.Calendar.getInstance()
+
+                        val timeFormat = android.text.format.DateFormat.getTimeFormat(context) // Formato de hora localizado
+                        val dateFormat = android.text.format.DateFormat.getDateFormat(context) // Formato de data localizado (CORRETO)
+
+                        if (lastSeenCalendar.get(java.util.Calendar.YEAR) == todayCalendar.get(java.util.Calendar.YEAR) &&
+                            lastSeenCalendar.get(java.util.Calendar.DAY_OF_YEAR) == todayCalendar.get(java.util.Calendar.DAY_OF_YEAR)) {
+                            "Visto por último: hoje às ${timeFormat.format(lastSeenCalendar.time)}"
+                        } else {
+                            // Cria uma cópia para não modificar o todayCalendar original permanentemente
+                            val yesterdayCalendar = java.util.Calendar.getInstance().apply {
+                                timeInMillis = todayCalendar.timeInMillis
+                                add(java.util.Calendar.DAY_OF_YEAR, -1)
+                            }
+                            if (lastSeenCalendar.get(java.util.Calendar.YEAR) == yesterdayCalendar.get(java.util.Calendar.YEAR) &&
+                                lastSeenCalendar.get(java.util.Calendar.DAY_OF_YEAR) == yesterdayCalendar.get(java.util.Calendar.DAY_OF_YEAR)) {
+                                "Visto por último: ontem às ${timeFormat.format(lastSeenCalendar.time)}"
+                            } else {
+                                // Para datas mais antigas, pode ser melhor mostrar apenas a data ou data e hora.
+                                // Exemplo: "Visto em 20/08/23 às 15:30"
+                                "Visto em ${dateFormat.format(lastSeenCalendar.time)} às ${timeFormat.format(lastSeenCalendar.time)}"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else -> user.presenceStatus ?: "" // Fallback para outros status ou se for nulo
     }
 }

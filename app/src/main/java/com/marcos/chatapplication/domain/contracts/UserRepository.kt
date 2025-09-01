@@ -16,7 +16,7 @@ interface UserRepository {
 
     fun getUsersByIds(userIds: List<String>): Flow<Result<List<User>>>
 
-    suspend fun updateUserProfile(userId: String, newUsername: String?, newEmail: String?, newBirthDate: String?): Result<Unit>
+    suspend fun updateUserProfile(userId: String, newUsername: String?, newEmail: String?, newBirthDate: String?, newStatus: String?): Result<Unit>
 
     suspend fun getAllUsers(): Result<List<User>>
 }

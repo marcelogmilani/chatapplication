@@ -9,7 +9,7 @@ import com.google.firebase.auth.PhoneAuthCredential
 import com.google.firebase.auth.PhoneAuthOptions
 import com.google.firebase.auth.PhoneAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration // NOVO IMPORT
+import com.google.firebase.firestore.ListenerRegistration
 import com.marcos.chatapplication.domain.contracts.AuthRepository
 import com.marcos.chatapplication.domain.contracts.AuthState
 import com.marcos.chatapplication.domain.model.User
@@ -26,22 +26,32 @@ class FirebaseAuthRepositoryImpl(
 ) : AuthRepository {
 
     private val _authState = MutableStateFlow(AuthState(isInitialLoading = true))
-    private var userDocumentListener: ListenerRegistration? = null // NOVO
+    private var userDocumentListener: ListenerRegistration? = null
 
     init {
         firebaseAuth.addAuthStateListener { auth ->
             val firebaseUser = auth.currentUser
             if (firebaseUser != null) {
-                // Remove o listener anterior, se existir, para evitar múltiplos listeners no mesmo documento
                 userDocumentListener?.remove()
                 userDocumentListener = firestore.collection("users").document(firebaseUser.uid)
                     .addSnapshotListener { documentSnapshot, firebaseFirestoreException ->
                         if (firebaseFirestoreException != null) {
-                            Log.w("FirebaseAuthRepo", "Listen error no documento do usuário", firebaseFirestoreException)
+                            Log.w(
+                                "FirebaseAuthRepo",
+                                "Listen error no documento do usuário",
+                                firebaseFirestoreException
+                            )
                             _authState.update {
                                 it.copy(
-                                    // Mesmo em erro de listen, tentamos criar um usuário com o que temos do FirebaseUser
-                                    user = firebaseUser.toDomainUser(null, null, null, null, null),
+                                    user = firebaseUser.toDomainUser(
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null
+                                    ), // Adicionado campos faltantes
                                     isInitialLoading = false
                                 )
                             }
@@ -57,25 +67,36 @@ class FirebaseAuthRepositoryImpl(
                                         usernameLowercaseFromFirestore = userFromFirestore?.username_lowercase,
                                         profilePictureUrlFromFirestore = userFromFirestore?.profilePictureUrl,
                                         emailFromFirestore = userFromFirestore?.email,
-                                        birthDateFromFirestore = userFromFirestore?.birthDate
+                                        birthDateFromFirestore = userFromFirestore?.birthDate,
+                                        presenceStatusFromFirestore = userFromFirestore?.presenceStatus, // Novo
+                                        lastSeenFromFirestore = userFromFirestore?.lastSeen // Novo
                                     ),
                                     isInitialLoading = false
                                 )
                             }
                         } else {
-                            Log.w("FirebaseAuthRepo", "Documento do usuário não encontrado ou nulo no snapshot listener.")
-                            // Usuário autenticado mas sem documento no Firestore (pode acontecer em casos raros ou deleção)
+                            Log.w(
+                                "FirebaseAuthRepo",
+                                "Documento do usuário não encontrado ou nulo no snapshot listener."
+                            )
                             _authState.update {
                                 it.copy(
-                                    user = firebaseUser.toDomainUser(null, null, null, null, null), // Dados do Firestore são nulos
+                                    user = firebaseUser.toDomainUser(
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        null
+                                    ), // Adicionado campos faltantes
                                     isInitialLoading = false
                                 )
                             }
                         }
                     }
             } else {
-                // Usuário fez logout ou não está autenticado
-                userDocumentListener?.remove() // Remove o listener ao fazer logout
+                userDocumentListener?.remove()
                 userDocumentListener = null
                 _authState.update { it.copy(user = null, isInitialLoading = false) }
             }
@@ -126,14 +147,16 @@ class FirebaseAuthRepositoryImpl(
                 val usernameLowercase = username.lowercase()
 
                 if (isNewUser) {
-                    val userDocument = mapOf(
+                    val userDocument = mutableMapOf<String, Any?>(
                         "uid" to firebaseUser.uid,
                         "username" to username,
                         "username_lowercase" to usernameLowercase,
                         "phone" to firebaseUser.phoneNumber,
                         "profilePictureUrl" to null,
                         "email" to null,
-                        "birthDate" to null
+                        "birthDate" to null,
+                        "presenceStatus" to "Online", // Valor inicial ao criar novo usuário
+                        "lastSeen" to null // Valor inicial ao criar novo usuário
                     )
 
                     val usernameQuery = firestore.collection("users")
@@ -148,13 +171,13 @@ class FirebaseAuthRepositoryImpl(
 
                     val userRef = firestore.collection("users").document(firebaseUser.uid)
                     userRef.set(userDocument).await()
-
-                    // O snapshot listener no init deve pegar essa atualização,
-                    // mas podemos emitir um estado inicial aqui também para garantir.
-                    // No entanto, para evitar emissões duplas, confiaremos no listener.
-                    // Se houver um delay perceptível, podemos reconsiderar uma emissão imediata aqui.
+                } else {
+                    // Para usuários existentes, apenas atualiza o status para Online
+                    // lastSeen não é alterado aqui, pois ele só é atualizado ao ficar offline.
+                    firestore.collection("users").document(firebaseUser.uid)
+                        .update("presenceStatus", "Online")
+                        .await()
                 }
-                // Para usuários existentes ou novos, o AuthState será atualizado pelo listener no init.
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Failed to sign in (Firebase Auth user is null)."))
@@ -169,28 +192,82 @@ class FirebaseAuthRepositoryImpl(
     }
 
     override fun signOut() {
-        // O AuthStateListener no init irá lidar com a remoção do snapshotListener
-        // e a atualização do _authState.
+        // Atualizar status para Offline antes de fazer signOut
+        // Não podemos usar _authState.value.user?.uid aqui diretamente porque o listener pode já ter limpado o usuário
+        // É mais seguro pegar o UID direto do firebaseAuth.currentUser antes do signOut
+        val currentUserId = firebaseAuth.currentUser?.uid
+        if (currentUserId != null) {
+            val updates = mapOf(
+                "presenceStatus" to "Offline",
+                "lastSeen" to System.currentTimeMillis()
+            )
+            firestore.collection("users").document(currentUserId)
+                .update(updates)
+                .addOnFailureListener { e ->
+                    Log.w(
+                        "FirebaseAuthRepo",
+                        "Falha ao atualizar status para offline no signOut",
+                        e
+                    )
+                }
+        }
         firebaseAuth.signOut()
     }
-}
 
-// A função toDomainUser permanece como na última correção, pois está correta.
-private fun FirebaseUser.toDomainUser(
-    usernameFromFirestore: String?,
-    usernameLowercaseFromFirestore: String?,
-    profilePictureUrlFromFirestore: String?,
-    emailFromFirestore: String?,
-    birthDateFromFirestore: String?
-): com.marcos.chatapplication.domain.model.User {
-    return com.marcos.chatapplication.domain.model.User(
-        uid = this.uid,
-        username = usernameFromFirestore,
-        username_lowercase = usernameLowercaseFromFirestore,
-        profilePictureUrl = profilePictureUrlFromFirestore,
-        phone = this.phoneNumber,
-        email = emailFromFirestore,
-        birthDate = birthDateFromFirestore,
-        fcmToken = null
-    )
+    // Implementação do novo método
+    override suspend fun updateUserStatus(userId: String, presenceStatus: String, lastSeen: Long?) {
+        val userRef = firestore.collection("users").document(userId)
+        val updates = mutableMapOf<String, Any?>()
+        updates["presenceStatus"] = presenceStatus
+        if (presenceStatus == "Offline") {
+            updates["lastSeen"] = lastSeen
+        } else if (presenceStatus == "Online") {
+            if (lastSeen != null) {
+                updates["lastSeen"] = lastSeen
+            }
+        }
+        Log.d("FirebaseAuthRepo", "updateUserStatus: Preparando para atualizar Firestore para userId=$userId com dados: $updates")
+        try {
+            if (presenceStatus == "Offline") {
+                // Para Offline, vamos tentar "fire-and-forget" para diagnóstico
+                // Removendo o await TEMPORARIAMENTE para este caso.
+                userRef.update(updates)
+                    .addOnSuccessListener {
+                        Log.d("FirebaseAuthRepo", "Status do usuário $userId ATUALIZADO (sem await) NO FIRESTORE para $presenceStatus, lastSeen: $lastSeen")
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("FirebaseAuthRepo", "Erro ao ATUALIZAR status (sem await) do usuário $userId: ${e.javaClass.simpleName} - ${e.message}", e)
+                    }
+            } else {
+                // Para Online, mantemos o await, pois geralmente ocorre quando o app está ativo
+                userRef.update(updates).await()
+                Log.d("FirebaseAuthRepo", "Status do usuário $userId ATUALIZADO (com await) NO FIRESTORE para $presenceStatus, lastSeen: $lastSeen")
+            }
+        } catch (e: Exception) {
+            Log.e("FirebaseAuthRepo", "Exceção no updateUserStatus (possivelmente do await para Online) para userId $userId: ${e.javaClass.simpleName} - ${e.message}", e)
+        }
+    }
+    // Adapte a função toDomainUser para incluir os novos campos
+    private fun FirebaseUser.toDomainUser(
+        usernameFromFirestore: String?,
+        usernameLowercaseFromFirestore: String?,
+        profilePictureUrlFromFirestore: String?,
+        emailFromFirestore: String?,
+        birthDateFromFirestore: String?,
+        presenceStatusFromFirestore: String?, // Novo
+        lastSeenFromFirestore: Long? // Novo
+    ): com.marcos.chatapplication.domain.model.User {
+        return com.marcos.chatapplication.domain.model.User(
+            uid = this.uid,
+            username = usernameFromFirestore,
+            username_lowercase = usernameLowercaseFromFirestore,
+            profilePictureUrl = profilePictureUrlFromFirestore,
+            phone = this.phoneNumber,
+            email = emailFromFirestore,
+            birthDate = birthDateFromFirestore,
+            fcmToken = null, // Mantenha como está se não estiver usando ainda
+            presenceStatus = presenceStatusFromFirestore ?: "Offline", // Valor padrão
+            lastSeen = lastSeenFromFirestore // Pode ser null
+        )
+    }
 }
