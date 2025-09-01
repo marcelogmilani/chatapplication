@@ -136,7 +136,6 @@ fun ChatScreen(
                             text = "" // Limpar campo de texto
                         } else {
                             Log.e("ChatScreen", "Conversation ID is null, cannot send image with caption.")
-                            // TODO: Adicionar feedback ao usuário aqui, se desejado (ex: Toast, Snackbar)
                         }
                     } else if (text.isNotBlank()) {
                         // Senão, se houver apenas texto, envie mensagem de texto normal
@@ -363,7 +362,7 @@ fun MessageBubble(
                                 Icon(Icons.Default.PushPin, contentDescription = "Mensagem fixada", modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                                 Spacer(modifier = Modifier.width(4.dp))
                             }
-                            Text(text = DateFormatter.formatMessageTimestamp(message.timestamp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                            Text(text = DateFormatter.formatFullTimestamp(message.timestamp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                             if (isSentByCurrentUser) {
                                 Spacer(modifier = Modifier.width(4.dp))
                                 MessageStatusIcon(status = message.status)
@@ -389,7 +388,7 @@ fun MessageBubble(
                                 Spacer(modifier = Modifier.width(4.dp))
                             }
                             Text(
-                                text = DateFormatter.formatMessageTimestamp(message.timestamp),
+                                text = DateFormatter.formatFullTimestamp(message.timestamp),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )

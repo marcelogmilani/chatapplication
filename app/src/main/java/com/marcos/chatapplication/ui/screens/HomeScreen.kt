@@ -185,7 +185,7 @@ fun ConversationItem(
         }
         Spacer(modifier = Modifier.width(16.dp))
         Text(
-            text = DateFormatter.formatConversationTimestamp(conversation.lastMessageTimestamp),
+            text = DateFormatter.formatFullTimestamp(conversation.lastMessageTimestamp),
             style = MaterialTheme.typography.bodySmall,
             color = Color.Gray
         )
