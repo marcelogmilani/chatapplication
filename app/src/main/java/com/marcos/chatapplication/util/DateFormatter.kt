@@ -4,12 +4,21 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 object DateFormatter {
 
-    private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-    private val dateFormat = SimpleDateFormat("dd/MM/yy", Locale.getDefault())
-    private val dayOfWeekFormat = SimpleDateFormat("EEEE", Locale.getDefault())
+    private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
+        timeZone = TimeZone.getDefault()
+    }
+
+    private val dateFormat = SimpleDateFormat("dd/MM/yy", Locale.getDefault()).apply {
+        timeZone = TimeZone.getDefault()
+    }
+
+    private val dayOfWeekFormat = SimpleDateFormat("EEEE", Locale.getDefault()).apply {
+        timeZone = TimeZone.getDefault()
+    }
 
     fun formatConversationTimestamp(date: Date?): String {
         if (date == null) return ""
@@ -48,5 +57,13 @@ object DateFormatter {
     private fun isYesterday(now: Calendar, cal: Calendar): Boolean {
         val yesterday = (now.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
         return isSameDay(yesterday, cal)
+    }
+
+    fun formatFullTimestamp(date: Date?): String {
+        if (date == null) return ""
+        val dateTimeFormat = SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault()).apply {
+            timeZone = TimeZone.getDefault()
+        }
+        return dateTimeFormat.format(date)
     }
 }

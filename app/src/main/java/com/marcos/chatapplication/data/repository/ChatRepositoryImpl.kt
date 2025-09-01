@@ -16,6 +16,7 @@ import com.marcos.chatapplication.domain.model.Message
 import com.marcos.chatapplication.domain.model.MessageStatus
 import com.marcos.chatapplication.domain.model.MessageType
 import com.marcos.chatapplication.domain.model.User
+import com.marcos.chatapplication.utils.NotificationUtils
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.channels.awaitClose
@@ -75,6 +76,7 @@ class ChatRepositoryImpl @Inject constructor(
         val allParticipantIds = (participantIds + currentUserId).distinct()
 
         return try {
+            // Firestore lida com ServerTimestamp diretamente no map
             val newConversationData = mapOf(
                 "participants" to allParticipantIds,
                 "isGroup" to true,
@@ -96,8 +98,10 @@ class ChatRepositoryImpl @Inject constructor(
         try {
             val conversationDoc = firestore.collection("conversations")
                 .document(conversationId).get().await()
+            // Se Conversation não for usado para ler diretamente aqui, obtenha 'participants' como List<String>?
             val participantsRaw = conversationDoc.get("participants") as? List<*>
             val participants = participantsRaw?.mapNotNull { it as? String }
+
             val otherUserId = participants?.firstOrNull { it != currentUserId }
 
             if (otherUserId == null) {
@@ -156,6 +160,7 @@ class ChatRepositoryImpl @Inject constructor(
         if (currentUserId == null) {
             return Result.failure(Exception("User not logged in."))
         }
+
         return try {
             val conversationRef = firestore.collection("conversations").document(conversationId)
             val messageRef = conversationRef.collection("messages").document()
@@ -164,7 +169,9 @@ class ChatRepositoryImpl @Inject constructor(
                 senderId = currentUserId,
                 text = text,
                 timestamp = null
+
             )
+
             firestore.batch().apply {
                 set(messageRef, newMessage)
                 update(
@@ -174,6 +181,12 @@ class ChatRepositoryImpl @Inject constructor(
                     )
                 )
             }.commit().await()
+
+            val otherParticipantId = NotificationUtils.getOtherParticipantId(conversationId)
+            otherParticipantId?.let {
+                NotificationUtils.sendMessageNotification(it, text, conversationId)
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e("ChatRepoImpl", "Error sending message", e)
@@ -334,10 +347,12 @@ class ChatRepositoryImpl @Inject constructor(
 
     override fun getUserConversations(): Flow<List<ConversationWithDetails>> {
         val currentUserId = firebaseAuth.currentUser?.uid ?: return flowOf(emptyList())
+
         val conversationsFlow: Flow<List<Conversation>> = callbackFlow {
             val query = firestore.collection("conversations")
                 .whereArrayContains("participants", currentUserId)
                 .orderBy("lastMessageTimestamp", Query.Direction.DESCENDING)
+
             val listener = query.addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.w("ChatRepoImpl", "getUserConversations listener error", error)
@@ -352,6 +367,7 @@ class ChatRepositoryImpl @Inject constructor(
             }
             awaitClose { listener.remove() }
         }
+
         return conversationsFlow.flatMapLatest { conversations ->
             if (conversations.isEmpty()) return@flatMapLatest flowOf(emptyList())
             val detailedFlows: List<Flow<ConversationWithDetails>> = conversations.map { conversation ->
@@ -387,6 +403,7 @@ class ChatRepositoryImpl @Inject constructor(
 
     override fun getConversationDetails(conversationId: String): Flow<ConversationWithDetails?> {
         val currentUserId = firebaseAuth.currentUser?.uid ?: ""
+
         return firestore.collection("conversations").document(conversationId)
             .snapshots()
             .map { snapshot -> if (snapshot.exists()) documentToConversation(snapshot) else null }
@@ -405,13 +422,15 @@ class ChatRepositoryImpl @Inject constructor(
 
     private fun getUserFlow(userId: String): Flow<User?> = callbackFlow {
         if (userId.isBlank()) {
-            trySend(null); close(); return@callbackFlow
+            trySend(null);
+            close(); return@callbackFlow
         }
         val docRef = firestore.collection("users").document(userId)
         val listener = docRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.w("ChatRepoImpl", "getUserFlow listener error for userId: $userId", error)
-                trySend(null); close(error); return@addSnapshotListener
+                trySend(null);
+                close(error); return@addSnapshotListener
             }
             trySend(snapshot?.toObject(User::class.java))
         }
@@ -421,6 +440,7 @@ class ChatRepositoryImpl @Inject constructor(
     override suspend fun pinMessage(conversationId: String, message: Message?): Result<Unit> {
         return try {
             val conversationRef = firestore.collection("conversations").document(conversationId)
+
             if (message == null) {
                 Log.d("PinMessageDebug", "A tentar desafixar mensagem na conversa $conversationId")
                 conversationRef.update(mapOf("pinnedMessageId" to null, "pinnedMessageText" to null, "pinnedMessageSenderId" to null)).await()

@@ -7,8 +7,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -57,35 +59,73 @@ fun HomeScreen(
         }
 
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            SearchBar(
+                query = uiState.searchQuery,
+                onQueryChange = viewModel::onSearchQueryChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+
             if (uiState.isLoading) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            } else if (uiState.conversations.isEmpty()) {
-                Text(
-                    text = "Nenhuma conversa encontrada.",
-                    modifier = Modifier.align(Alignment.Center)
-                )
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else if (uiState.filteredConversations.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        //If se o usuário tiver conversas, else se o usuário nunca tiver falado com ninguém
+                        text = if (uiState.searchQuery.isNotEmpty()) "Nenhum resultado encontrado." else "Nenhuma conversa encontrada.",
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(uiState.conversations) { conversationDetails ->
+                    items(uiState.filteredConversations, key = { it.conversation.id }) { conversationDetails ->
                         ConversationItem(
                             conversationDetails = conversationDetails,
                             onClick = {
                                 onConversationClick(conversationDetails.conversation.id)
                             }
                         )
-                        Divider()
+                        HorizontalDivider() // Adiciona uma linha divisória entre os itens
                     }
                 }
             }
         }
     }
+}
+
+//Barra de pesquisa de contatos e grupos
+@Composable
+fun SearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = modifier,
+        placeholder = { Text("Buscar contatos ou grupos...") },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Ícone de Busca") },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Default.Clear, contentDescription = "Limpar Busca")
+                }
+            }
+        },
+        singleLine = true,
+        shape = CircleShape
+    )
 }
 
 @Composable
@@ -145,7 +185,7 @@ fun ConversationItem(
         }
         Spacer(modifier = Modifier.width(16.dp))
         Text(
-            text = DateFormatter.formatConversationTimestamp(conversation.lastMessageTimestamp),
+            text = DateFormatter.formatFullTimestamp(conversation.lastMessageTimestamp),
             style = MaterialTheme.typography.bodySmall,
             color = Color.Gray
         )

@@ -41,7 +41,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+// import androidx.compose.ui.text.style.TextAlign // Removido se não usado
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -193,7 +193,7 @@ fun ChatScreen(
             PinnedMessageBar(
                 conversation = conversation,
                 onUnpin = {
-                    viewModel.onPinMessage(null)
+                    viewModel.onPinMessage(null) // Pass null to unpin
                 },
                 onClick = {
                     val index = uiState.messages.indexOfFirst { it.id == pinnedMessageId }
@@ -218,7 +218,7 @@ fun ChatScreen(
                         isGroupChat = conversation?.isGroup == true,
                         isPinned = message.id == pinnedMessageId,
                         onLongPress = { viewModel.onPinMessage(message) },
-                        navController = navController // PASSANDO O NAVCONTROLLER
+                        navController = navController
                     )
                 }
             }
@@ -302,7 +302,6 @@ fun MessageBubble(
                     .background(bubbleColor)
                     .combinedClickable(
                         onClick = {
-                            // LÓGICA DE CLIQUE PARA NAVEGAR
                             if (message.mediaUrl != null) {
                                 when (message.type) {
                                     MessageType.IMAGE -> {
@@ -314,7 +313,6 @@ fun MessageBubble(
                                         navController.navigate(Screen.MediaView.createRoute("video", message.mediaUrl!!))
                                     }
                                     else -> {
-                                        // Não faz nada para mensagens de texto no onClick simples
                                         Log.d("MessageBubble", "Text message clicked (no action defined for simple click).")
                                     }
                                 }
@@ -351,7 +349,10 @@ fun MessageBubble(
                     }
                     MessageType.VIDEO -> {
                         Column(
-                            modifier = if (message.text != MessageType.VIDEO_LABEL && !message.text.isNullOrBlank()) Modifier.padding(horizontal = 12.dp, vertical = 8.dp) else Modifier
+                            modifier = if (!message.text.isNullOrBlank() && message.text != MessageType.VIDEO_LABEL)
+                                Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            else
+                                Modifier 
                         ) {
                             Box(
                                 modifier = Modifier
@@ -399,13 +400,24 @@ fun MessageBubble(
                                     text = caption,
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(top = 4.dp)
-                                )
+                                       )
                             }
-                            MessageMetadataRow(message, isSentByCurrentUser, isPinned, modifier = if (caption == null && (message.text == MessageType.VIDEO_LABEL || message.text.isNullOrBlank())) Modifier.padding(horizontal = 12.dp, vertical = 8.dp) else Modifier)
+                            MessageMetadataRow(
+                                message,
+                                isSentByCurrentUser,
+                                isPinned,
+                                modifier = if (caption == null && (message.text == MessageType.VIDEO_LABEL || message.text.isNullOrBlank()))
+                                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                else
+                                    Modifier
+                            )
                         }
                     }
                     else -> { // Mensagem de Texto
-                        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.Bottom
+                        ) {
                             Text(
                                 text = message.text ?: "",
                                 modifier = Modifier.weight(1f, fill = false)
@@ -429,9 +441,10 @@ fun MessageMetadataRow(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = if (isText) Arrangement.End else Arrangement.Start,
+        horizontalArrangement = if (isText) Arrangement.End else Arrangement.Start, // Para texto, alinhar metadados à direita do texto
         modifier = modifier.then(
-            if (!isText) Modifier.fillMaxWidth().padding(top = 4.dp) else Modifier.padding(start = 8.dp)
+            if (!isText) Modifier.fillMaxWidth().padding(top = 4.dp) // Para imagem/vídeo, ocupa largura e tem padding superior
+            else Modifier.padding(start = 8.dp) // Para texto, apenas padding inicial para separar do texto
         )
     ) {
         if (isPinned) {
@@ -444,6 +457,7 @@ fun MessageMetadataRow(
             Spacer(modifier = Modifier.width(4.dp))
         }
         Text(
+            // Usar formatMessageTimestamp que você já tinha, ou formatFullTimestamp se preferir mais detalhe
             text = DateFormatter.formatMessageTimestamp(message.timestamp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -518,14 +532,14 @@ fun MessageStatusIcon(status: String) {
     val icon = when (status) {
         MessageStatus.SENT -> Icons.Default.Done
         MessageStatus.DELIVERED -> Icons.Default.DoneAll
-        MessageStatus.READ -> Icons.Filled.DoneAll
-        else -> null
+        MessageStatus.READ -> Icons.Filled.DoneAll // MaterialTheme.colorScheme.primary para este
+        else -> null // ou um ícone de pendente/erro se quiser
     }
     val contentDesc = when (status) {
         MessageStatus.SENT -> "Mensagem enviada"
         MessageStatus.DELIVERED -> "Mensagem entregue"
         MessageStatus.READ -> "Mensagem lida"
-        else -> "Status da mensagem"
+        else -> "Status da mensagem" // Ou um específico para pendente/erro
     }
     val iconColor = if (status == MessageStatus.READ) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
 
@@ -548,13 +562,13 @@ fun SearchBar(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = MaterialTheme.colorScheme.surfaceVariant, // Ou Surface, dependendo do design
         shadowElevation = 4.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp),
+                .height(64.dp), // Altura padrão da TopAppBar
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
@@ -569,16 +583,16 @@ fun SearchBar(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
                     disabledContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent, // Sem linha indicadora
+                    unfocusedIndicatorColor = Color.Transparent, // Sem linha indicadora
                     cursorColor = MaterialTheme.colorScheme.primary
                 ),
                 maxLines = 1,
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge
+                textStyle = MaterialTheme.typography.bodyLarge // Ou o estilo desejado
             )
             if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
+                IconButton(onClick = { onQueryChange("") }) { // Limpar query
                     Icon(Icons.Default.Clear, contentDescription = "Limpar Busca")
                 }
             }
@@ -596,24 +610,24 @@ fun PinnedMessageBar(
     val pinnedMessageText = conversation?.pinnedMessageText
 
     AnimatedVisibility(visible = pinnedMessageText != null) {
-        if (pinnedMessageText != null) {
+        if (pinnedMessageText != null) { // Verificação para Smart Cast
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(onClick = onClick)
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .padding(horizontal = 8.dp, vertical = 4.dp), // Padding em volta da barra
                 shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = MaterialTheme.colorScheme.surfaceVariant, // Cor de destaque
                 shadowElevation = 2.dp
             ) {
                 Row(
                     modifier = Modifier
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .padding(horizontal = 12.dp, vertical = 8.dp) // Padding interno
                         .fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) { // Para o texto ocupar o espaço disponível
                         Icon(
                             Icons.Default.PushPin,
                             contentDescription = "Mensagem fixada",
@@ -626,10 +640,10 @@ fun PinnedMessageBar(
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold // Dar destaque
                         )
                     }
-                    IconButton(onClick = onUnpin, modifier = Modifier.size(24.dp)) {
+                    IconButton(onClick = onUnpin, modifier = Modifier.size(24.dp)) { // Tamanho menor para o ícone de fechar
                         Icon(
                             Icons.Default.Clear,
                             contentDescription = "Desafixar mensagem",
@@ -649,25 +663,26 @@ fun MessageInput(
     text: String,
     onTextChange: (String) -> Unit,
     onSendClick: () -> Unit,
-    onAttachmentClick: () -> Unit,
+    onAttachmentClick: () -> Unit, // Para imagens
     previewImageUri: Uri?,
     onRemovePreviewImage: () -> Unit,
     previewVideoUri: Uri?,
     onRemovePreviewVideo: () -> Unit,
-    onVideoAttachmentClick: () -> Unit
+    onVideoAttachmentClick: () -> Unit // Para vídeos
 ) {
     Surface(
         shadowElevation = 8.dp,
-        color = MaterialTheme.colorScheme.surface
+        color = MaterialTheme.colorScheme.surface // Cor de fundo da barra de input
     ) {
-        Column {
+        Column { // Para empilhar a pré-visualização e a barra de input
+            // Pré-visualização da Imagem
             if (previewImageUri != null) {
                 Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)) {
                     AsyncImage(
                         model = previewImageUri,
                         contentDescription = "Pré-visualização da imagem",
                         modifier = Modifier
-                            .height(100.dp)
+                            .height(100.dp) // Altura da miniatura
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp)),
                         contentScale = ContentScale.Crop
@@ -682,29 +697,29 @@ fun MessageInput(
                         Icon(
                             Icons.Default.Clear,
                             contentDescription = "Remover pré-visualização da imagem",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer // Cor do ícone para bom contraste
                         )
                     }
                 }
             } else if (previewVideoUri != null) {
-                Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                 Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)) // Fundo para a pré-visualização do vídeo
                     .fillMaxWidth()
-                    .height(100.dp)
+                    .height(100.dp) // Altura da miniatura
                 ) {
-                    Column(
+                    Column( // Para centralizar o ícone e o texto
                         modifier = Modifier.fillMaxSize().padding(8.dp),
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Videocam,
+                            imageVector = Icons.Filled.Videocam, // Ícone de vídeo
                             contentDescription = "Ícone de vídeo",
-                            modifier = Modifier.size(40.dp),
-                            tint = MaterialTheme.colorScheme.primary
+                            modifier = Modifier.size(40.dp), // Tamanho do ícone
+                            tint = MaterialTheme.colorScheme.primary // Cor do ícone
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(
+                        Text( // Nome do arquivo ou texto genérico
                             text = "Vídeo selecionado: ${previewVideoUri.lastPathSegment ?: "video.mp4"}",
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
@@ -730,13 +745,13 @@ fun MessageInput(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp, top = if (previewImageUri != null || previewVideoUri != null) 0.dp else 8.dp),
+                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp, top = if (previewImageUri != null || previewVideoUri != null) 0.dp else 8.dp), // Ajustar padding superior se houver preview
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onAttachmentClick) {
+                IconButton(onClick = onAttachmentClick) { // Botão para anexar imagem
                     Icon(imageVector = Icons.Filled.AttachFile, contentDescription = "Anexar imagem")
                 }
-                IconButton(onClick = onVideoAttachmentClick) {
+                IconButton(onClick = onVideoAttachmentClick) { // Botão para anexar vídeo
                     Icon(imageVector = Icons.Filled.Videocam, contentDescription = "Anexar vídeo")
                 }
                 Spacer(modifier = Modifier.width(8.dp))
@@ -753,23 +768,23 @@ fun MessageInput(
                         Text(placeholderText)
                     },
                     colors = TextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, // Cor de fundo do TextField
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, // Cor de fundo do TextField
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant, // Cor de fundo do TextField
+                        focusedIndicatorColor = Color.Transparent, // Sem linha sob o texto
+                        unfocusedIndicatorColor = Color.Transparent, // Sem linha sob o texto
                         cursorColor = MaterialTheme.colorScheme.primary
                     ),
-                    shape = RoundedCornerShape(20.dp),
-                    maxLines = 5
+                    shape = RoundedCornerShape(20.dp), // Cantos arredondados
+                    maxLines = 5 // Permitir múltiplas linhas para legendas ou mensagens mais longas
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(
                     onClick = onSendClick,
-                    enabled = text.isNotBlank() || previewImageUri != null || previewVideoUri != null,
+                    enabled = text.isNotBlank() || previewImageUri != null || previewVideoUri != null, // Habilitar se houver texto OU mídia
                     colors = IconButtonDefaults.iconButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        contentColor = MaterialTheme.colorScheme.primary, // Cor do ícone quando habilitado
+                        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) // Cor do ícone quando desabilitado
                     )
                 ) {
                     Icon(imageVector = Icons.AutoMirrored.Filled.Send, contentDescription = "Enviar mensagem")
