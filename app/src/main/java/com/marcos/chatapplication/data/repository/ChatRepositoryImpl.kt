@@ -1,13 +1,13 @@
 package com.marcos.chatapplication.data.repository
 
-import android.net.Uri // ADICIONADO
+import android.net.Uri
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.snapshots
+import com.google.firebase.firestore.snapshots // Certifique-se que esta é usada ou remova
 import com.google.firebase.storage.FirebaseStorage
 import com.marcos.chatapplication.domain.contracts.ChatRepository
 import com.marcos.chatapplication.domain.model.Conversation
@@ -22,6 +22,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -30,7 +31,7 @@ import kotlinx.coroutines.tasks.await
 class ChatRepositoryImpl @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val firebaseAuth: FirebaseAuth,
-    private val storage: FirebaseStorage, // ADICIONADO
+    private val storage: FirebaseStorage
 ) : ChatRepository {
 
     override suspend fun createOrGetConversation(targetUserId: String): Result<String> {
@@ -55,7 +56,7 @@ class ChatRepositoryImpl @Inject constructor(
                 val newConversation = Conversation(
                     participants = participants,
                     lastMessage = "Nenhuma mensagem ainda.",
-                    lastMessageTimestamp = null // Firestore usará @ServerTimestamp na conversão para o objeto Conversation se configurado no modelo
+                    lastMessageTimestamp = null
                 )
                 val newDocRef = firestore.collection("conversations").add(newConversation).await()
                 Result.success(newDocRef.id)
@@ -81,7 +82,7 @@ class ChatRepositoryImpl @Inject constructor(
                 "isGroup" to true,
                 "groupName" to groupName,
                 "lastMessage" to "Grupo criado.",
-                "lastMessageTimestamp" to FieldValue.serverTimestamp() // Correto para escrita direta de Map
+                "lastMessageTimestamp" to FieldValue.serverTimestamp()
             )
             val newDocRef = firestore.collection("conversations").add(newConversationData).await()
             Result.success(newDocRef.id)
@@ -104,7 +105,7 @@ class ChatRepositoryImpl @Inject constructor(
             val otherUserId = participants?.firstOrNull { it != currentUserId }
 
             if (otherUserId == null) {
-                Log.d("ChatRepoImpl", "Outro utilizador não encontrado ou 'participants' não é uma lista de Strings, não é possível marcar como lido. Participants: $participants")
+                Log.d("ChatRepoImpl", "Outro utilizador não encontrado, não é possível marcar como lido. Participants: $participants")
                 return
             }
 
@@ -146,7 +147,7 @@ class ChatRepositoryImpl @Inject constructor(
             }
             if (snapshot != null) {
                 val messages = snapshot.toObjects(Message::class.java).mapIndexed { index, message ->
-                    message.copy(id = snapshot.documents[index].id) // Garante que o ID do documento seja usado
+                    message.copy(id = snapshot.documents[index].id)
                 }
                 trySend(messages)
             }
@@ -168,6 +169,7 @@ class ChatRepositoryImpl @Inject constructor(
                 senderId = currentUserId,
                 text = text,
                 timestamp = null
+
             )
 
             firestore.batch().apply {
@@ -197,7 +199,6 @@ class ChatRepositoryImpl @Inject constructor(
         if (currentUserId == null) {
             return Result.failure(Exception("User not logged in."))
         }
-
         return try {
             val imageFileName = "${UUID.randomUUID()}.jpg"
             val storagePath = "images/$conversationId/$imageFileName"
@@ -212,39 +213,28 @@ class ChatRepositoryImpl @Inject constructor(
 
             val conversationRef = firestore.collection("conversations").document(conversationId)
             val messageRef = conversationRef.collection("messages").document()
-
             val originalFileName = imageUri.lastPathSegment ?: imageFileName
-
-
             val messageText = if (!caption.isNullOrBlank()) {
                 caption
             } else {
                 MessageType.IMAGE_LABEL
             }
-
             val newMessage = Message(
                 id = messageRef.id,
                 senderId = currentUserId,
                 type = MessageType.IMAGE,
                 mediaUrl = downloadUrl,
-                text = messageText, // <<< USA O messageText DETERMINADO ACIMA
-                timestamp = null, // Firestore irá preencher com ServerTimestamp
+                text = messageText,
+                timestamp = null,
                 status = MessageStatus.SENT,
                 fileName = originalFileName
-                // fileSize pode ser adicionado no futuro se necessário
             )
             Log.d("ChatRepoImpl", "Objeto Message criado: $newMessage")
-
-
-            // >>> CORREÇÃO AQUI: Determinar o lastMessage para a conversa <<<
             val lastMessageTextForConversation = if (!caption.isNullOrBlank()) {
-                "${MessageType.IMAGE_LABEL}${if (caption.isNotEmpty()) ": $caption" else ""}" // Ex: "📷 Imagem: Legenda" ou "📷 Imagem"
+                "${MessageType.IMAGE_LABEL}${if (caption.isNotEmpty()) ": $caption" else ""}"
             } else {
-                // Se não houver legenda, use o nome do arquivo ou um label genérico.
-                "${MessageType.IMAGE_LABEL}: ${originalFileName.take(20)}${if(originalFileName.length > 20) "..." else ""}" // Nome do arquivo truncado
+                "${MessageType.IMAGE_LABEL}: ${originalFileName.take(20)}${if(originalFileName.length > 20) "..." else ""}"
             }
-
-
             firestore.batch().apply {
                 set(messageRef, newMessage)
                 update(
@@ -255,7 +245,6 @@ class ChatRepositoryImpl @Inject constructor(
                 )
             }.commit().await()
             Log.d("ChatRepoImpl", "Batch commit para mensagem de imagem e lastMessage bem-sucedido.")
-
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e("ChatRepoImpl", "Erro ao enviar mensagem de imagem", e)
@@ -263,6 +252,97 @@ class ChatRepositoryImpl @Inject constructor(
         }
     }
 
+    // MÉTODO ATUALIZADO
+    override suspend fun sendVideoMessage(
+        conversationId: String,
+        videoUri: Uri,
+        caption: String?,
+        videoThumbnailBytes: ByteArray?, // NOVO PARÂMETRO
+        videoDuration: Long?             // NOVO PARÂMETRO
+    ): Result<Unit> {
+        val currentUserId = firebaseAuth.currentUser?.uid
+        if (currentUserId == null) {
+            Log.e("ChatRepoImpl", "User not logged in, cannot send video message.")
+            return Result.failure(Exception("User not logged in."))
+        }
+
+        return try {
+            // 1. Upload do vídeo principal
+            val videoFileId = UUID.randomUUID().toString() // Usar como base para nomes
+            val originalFileName = videoUri.lastPathSegment ?: videoFileId
+            val fileExtension = originalFileName.substringAfterLast('.', "")
+            val fullVideoFileNameInStorage = if (fileExtension.isNotEmpty()) "$videoFileId.$fileExtension" else videoFileId
+            val videoStoragePath = "videos/$conversationId/$fullVideoFileNameInStorage"
+            val videoStorageRef = storage.reference.child(videoStoragePath)
+
+            Log.d("ChatRepoImpl", "Starting video upload to: $videoStoragePath")
+            videoStorageRef.putFile(videoUri).await()
+            val videoDownloadUrl = videoStorageRef.downloadUrl.await().toString()
+            Log.d("ChatRepoImpl", "Video upload complete. URL: $videoDownloadUrl")
+
+            // 2. Upload da miniatura do vídeo (se existir)
+            var thumbnailDownloadUrl: String? = null
+            if (videoThumbnailBytes != null) {
+                val thumbnailFileName = "${videoFileId}_thumb.jpg" // Nome para a miniatura
+                val thumbnailStoragePath = "video_thumbnails/$conversationId/$thumbnailFileName" // Pasta separada para miniaturas
+                val thumbnailStorageRef = storage.reference.child(thumbnailStoragePath)
+                try {
+                    Log.d("ChatRepoImpl", "Starting video thumbnail upload to: $thumbnailStoragePath")
+                    thumbnailStorageRef.putBytes(videoThumbnailBytes).await()
+                    thumbnailDownloadUrl = thumbnailStorageRef.downloadUrl.await().toString()
+                    Log.d("ChatRepoImpl", "Video thumbnail upload complete. URL: $thumbnailDownloadUrl")
+                } catch (thumbEx: Exception) {
+                    Log.e("ChatRepoImpl", "Error uploading video thumbnail for $videoFileId", thumbEx)
+                    // O envio do vídeo não falha se a miniatura falhar, thumbnailDownloadUrl permanecerá null
+                }
+            } else {
+                Log.d("ChatRepoImpl", "No thumbnail bytes provided for video $videoFileId, skipping thumbnail upload.")
+            }
+
+
+            // 3. Preparar e salvar a mensagem no Firestore
+            val conversationRef = firestore.collection("conversations").document(conversationId)
+            val messageRef = conversationRef.collection("messages").document()
+
+            val messageText = if (!caption.isNullOrBlank()) caption else MessageType.VIDEO_LABEL
+
+            val newMessage = Message(
+                id = messageRef.id,
+                senderId = currentUserId,
+                type = MessageType.VIDEO,
+                mediaUrl = videoDownloadUrl,        // URL do vídeo principal
+                thumbnailUrl = thumbnailDownloadUrl, // URL da miniatura (pode ser null)
+                text = messageText,
+                timestamp = null,
+                status = MessageStatus.SENT,
+                fileName = originalFileName,
+                duration = videoDuration            // Duração do vídeo (pode ser null)
+            )
+            Log.d("ChatRepoImpl", "Video Message object created: $newMessage")
+
+            val lastMessageTextForConversation = if (!caption.isNullOrBlank()) {
+                "${MessageType.VIDEO_LABEL}: $caption"
+            } else {
+                "${MessageType.VIDEO_LABEL}: ${originalFileName.take(25)}${if(originalFileName.length > 25) "..." else ""}"
+            }
+
+            firestore.batch().apply {
+                set(messageRef, newMessage)
+                update(
+                    conversationRef, mapOf(
+                        "lastMessage" to lastMessageTextForConversation,
+                        "lastMessageTimestamp" to FieldValue.serverTimestamp()
+                    )
+                )
+            }.commit().await()
+            Log.d("ChatRepoImpl", "Batch commit for video message (with metadata) and lastMessage update successful.")
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("ChatRepoImpl", "Error sending video message", e)
+            Result.failure(e)
+        }
+    }
 
 
     override fun getUserConversations(): Flow<List<ConversationWithDetails>> {
@@ -279,36 +359,26 @@ class ChatRepositoryImpl @Inject constructor(
                     close(error); return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val convos = snapshot.documents.mapNotNull { doc ->
-                        documentToConversation(doc)
-                    }
+                    val convos = snapshot.documents.mapNotNull { doc -> documentToConversation(doc) }
                     trySend(convos)
                 } else {
-                    trySend(emptyList()) // Envia lista vazia se snapshot for nulo e não houver erro
+                    trySend(emptyList())
                 }
             }
             awaitClose { listener.remove() }
         }
 
         return conversationsFlow.flatMapLatest { conversations ->
-            if (conversations.isEmpty()) {
-                return@flatMapLatest flowOf(emptyList())
-            }
-
+            if (conversations.isEmpty()) return@flatMapLatest flowOf(emptyList())
             val detailedFlows: List<Flow<ConversationWithDetails>> = conversations.map { conversation ->
                 if (conversation.isGroup) {
-                    flowOf(ConversationWithDetails(conversation, null)) // Para grupos, otherParticipant é null
+                    flowOf(ConversationWithDetails(conversation, null))
                 } else {
                     val otherId = conversation.participants.firstOrNull { it != currentUserId } ?: ""
-                    getUserFlow(otherId).map { user ->
-                        ConversationWithDetails(conversation, user)
-                    }
+                    getUserFlow(otherId).map { user -> ConversationWithDetails(conversation, user) }
                 }
             }
-            // kotlinx.coroutines.flow.combine
-            if (detailedFlows.isEmpty()) flowOf(emptyList()) else kotlinx.coroutines.flow.combine(detailedFlows) { detailsArray ->
-                detailsArray.toList()
-            }
+            if (detailedFlows.isEmpty()) flowOf(emptyList()) else combine(detailedFlows) { it.toList() }
         }
     }
 
@@ -321,9 +391,9 @@ class ChatRepositoryImpl @Inject constructor(
                 lastMessageTimestamp = doc.getDate("lastMessageTimestamp"),
                 isGroup = doc.getBoolean("isGroup") ?: false,
                 groupName = doc.getString("groupName"),
-                pinnedMessageId = doc.getString("pinnedMessageId"), // Pode ser null
-                pinnedMessageText = doc.getString("pinnedMessageText"), // Pode ser null
-                pinnedMessageSenderId = doc.getString("pinnedMessageSenderId") // Adicionado ao modelo, pode ser null
+                pinnedMessageId = doc.getString("pinnedMessageId"),
+                pinnedMessageText = doc.getString("pinnedMessageText"),
+                pinnedMessageSenderId = doc.getString("pinnedMessageSenderId")
             )
         } catch (e: Exception) {
             Log.e("ChatRepoImpl", "Erro ao mapear o documento da conversa: ${doc.id}", e)
@@ -336,28 +406,15 @@ class ChatRepositoryImpl @Inject constructor(
 
         return firestore.collection("conversations").document(conversationId)
             .snapshots()
-            .map { snapshot ->
-                if (snapshot.exists()) {
-                    documentToConversation(snapshot)
-                } else {
-                    null
-                }
-            }
+            .map { snapshot -> if (snapshot.exists()) documentToConversation(snapshot) else null }
             .flatMapLatest { conversation ->
-                if (conversation == null) {
-                    flowOf(null)
-                } else {
-                    if (conversation.isGroup) {
-                        flowOf(ConversationWithDetails(conversation, null))
-                    } else {
+                if (conversation == null) flowOf(null)
+                else {
+                    if (conversation.isGroup) flowOf(ConversationWithDetails(conversation, null))
+                    else {
                         val otherId = conversation.participants.firstOrNull { it != currentUserId } ?: ""
-                        if (otherId.isBlank()) { // Lida com o caso de não encontrar otherId
-                            flowOf(ConversationWithDetails(conversation, null)) // ou algum estado de erro/vazio
-                        } else {
-                            getUserFlow(otherId).map { user ->
-                                ConversationWithDetails(conversation, user)
-                            }
-                        }
+                        if (otherId.isBlank()) flowOf(ConversationWithDetails(conversation, null))
+                        else getUserFlow(otherId).map { user -> ConversationWithDetails(conversation, user) }
                     }
                 }
             }
@@ -365,17 +422,15 @@ class ChatRepositoryImpl @Inject constructor(
 
     private fun getUserFlow(userId: String): Flow<User?> = callbackFlow {
         if (userId.isBlank()) {
-            trySend(null) // Envia null imediatamente
-            close()       // Fecha o flow
-            return@callbackFlow
+            trySend(null);
+            close(); return@callbackFlow
         }
         val docRef = firestore.collection("users").document(userId)
         val listener = docRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.w("ChatRepoImpl", "getUserFlow listener error for userId: $userId", error)
-                trySend(null) // Em caso de erro, envia null ou propaga o erro
-                close(error)
-                return@addSnapshotListener
+                trySend(null);
+                close(error); return@addSnapshotListener
             }
             trySend(snapshot?.toObject(User::class.java))
         }
@@ -388,23 +443,11 @@ class ChatRepositoryImpl @Inject constructor(
 
             if (message == null) {
                 Log.d("PinMessageDebug", "A tentar desafixar mensagem na conversa $conversationId")
-                conversationRef.update(
-                    mapOf(
-                        "pinnedMessageId" to null,
-                        "pinnedMessageText" to null,
-                        "pinnedMessageSenderId" to null // Limpa também o senderId
-                    )
-                ).await()
+                conversationRef.update(mapOf("pinnedMessageId" to null, "pinnedMessageText" to null, "pinnedMessageSenderId" to null)).await()
                 Log.d("PinMessageDebug", "Mensagem desafixada com SUCESSO.")
             } else {
                 Log.d("PinMessageDebug", "A tentar fixar a mensagem '${message.text}' na conversa $conversationId")
-                conversationRef.update(
-                    mapOf(
-                        "pinnedMessageId" to message.id,
-                        "pinnedMessageText" to message.text, // ou message.mediaUrl se for imagem
-                        "pinnedMessageSenderId" to message.senderId
-                    )
-                ).await()
+                conversationRef.update(mapOf("pinnedMessageId" to message.id, "pinnedMessageText" to message.text, "pinnedMessageSenderId" to message.senderId)).await()
                 Log.d("PinMessageDebug", "Mensagem fixada com SUCESSO.")
             }
             Result.success(Unit)

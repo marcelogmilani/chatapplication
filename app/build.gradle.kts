@@ -87,6 +87,8 @@ dependencies {
     implementation(libs.ui.graphics)
     implementation(libs.ui.tooling.preview)
     implementation(libs.material3)
+    implementation("androidx.media3:media3-exoplayer:1.8.0") // Verifique a versão mais recente
+    implementation("androidx.media3:media3-ui:1.8.0")        // Para componentes de UI do player
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.espresso.core)
