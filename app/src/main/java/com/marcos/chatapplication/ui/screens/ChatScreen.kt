@@ -200,7 +200,7 @@ fun ChatScreen(
                                     "Conversation ID is null, cannot send image with caption."
                                 )
                             }
-                        }else if (currentVideoPreviewUri != null) {
+                        } else if (currentVideoPreviewUri != null) {
                             if (conversationId != null) {
                                 viewModel.sendVideoMessage(currentVideoPreviewUri, conversationId, text.ifBlank { null })
                                 videoUriForPreview = null
