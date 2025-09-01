@@ -27,4 +27,7 @@ interface ChatRepository {
     suspend fun getGroupDetails(conversationId: String): Result<Conversation>
 
     suspend fun getAvailableUsers(): Result<List<User>>
+
+    suspend fun updateGroupImage(conversationId: String, imageUri: Uri): Result<String>
+    suspend fun updateGroupImage(conversationId: String, imageUrl: String): Result<Unit>
 }

@@ -48,6 +48,7 @@ import com.marcos.chatapplication.domain.model.MessageType
 import com.marcos.chatapplication.domain.model.User
 import com.marcos.chatapplication.navigation.Screen
 import com.marcos.chatapplication.ui.viewmodel.ChatViewModel
+import com.marcos.chatapplication.ui.viewmodel.GroupActionState
 import com.marcos.chatapplication.util.DateFormatter
 import kotlinx.coroutines.launch
 
@@ -76,6 +77,9 @@ fun ChatScreen(
         currentUserId in participants
     }
 
+    val groupActionState by viewModel.groupActionState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri: Uri? ->
@@ -95,6 +99,22 @@ fun ChatScreen(
             coroutineScope.launch {
                 listState.animateScrollToItem(uiState.messages.size - 1)
             }
+        }
+    }
+
+    LaunchedEffect(groupActionState) {
+        when (val state = groupActionState) {
+            is GroupActionState.Success -> {
+                // Mostrar snackbar de sucesso
+                snackbarHostState.showSnackbar(state.message)
+                viewModel.resetGroupActionState()
+            }
+            is GroupActionState.Error -> {
+                // Mostrar snackbar de erro
+                snackbarHostState.showSnackbar(state.message)
+                viewModel.resetGroupActionState()
+            }
+            else -> {}
         }
     }
 
@@ -118,6 +138,11 @@ fun ChatScreen(
                     onEditGroupClick = {
                         if (conversation?.isGroup == true && conversationId != null && isParticipant) {
                             navController.navigate(Screen.EditGroup.createRoute(conversationId))
+                        }
+                    },
+                    onGroupImageChange = { uri ->
+                        if (conversationId != null) {
+                            viewModel.updateGroupImage(conversationId, uri)
                         }
                     }
                 )
@@ -237,13 +262,22 @@ fun ChatTopAppBar(
     conversation: Conversation?,
     otherParticipant: User?,
     onSearchClick: () -> Unit,
-    onEditGroupClick: () -> Unit
+    onEditGroupClick: () -> Unit,
+    onGroupImageChange: (Uri) -> Unit
 ) {
     val currentUserId = Firebase.auth.currentUser?.uid
     val isParticipant = remember(conversation) {
         val participants = conversation?.participants ?: emptyList()
         currentUserId in participants
     }
+
+    var showImagePicker by remember { mutableStateOf(false) }
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri: Uri? ->
+            uri?.let { onGroupImageChange(it) }
+        }
+    )
 
     TopAppBar(
         title = {
@@ -261,10 +295,13 @@ fun ChatTopAppBar(
                 )
             ) {
                 if (conversation?.isGroup == true) {
-                    Icon(
-                        imageVector = Icons.Default.Group,
-                        contentDescription = "Ícone do Grupo",
-                        modifier = Modifier.size(32.dp).clip(CircleShape)
+                    AsyncImage(
+                        model = conversation.groupImageUrl ?: R.drawable.ic_person_placeholder,
+                        contentDescription = "Imagem do Grupo",
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(text = conversation.groupName ?: "Grupo")
@@ -273,9 +310,7 @@ fun ChatTopAppBar(
                         model = otherParticipant?.profilePictureUrl?.ifEmpty { R.drawable.ic_person_placeholder },
                         contentDescription = "Foto de perfil de ${otherParticipant?.username}",
                         modifier = Modifier.size(32.dp).clip(CircleShape),
-                        contentScale = ContentScale.Crop,
-                        placeholder = painterResource(id = R.drawable.ic_person_placeholder),
-                        error = painterResource(id = R.drawable.ic_person_placeholder)
+                        contentScale = ContentScale.Crop
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(text = otherParticipant?.username ?: "Carregando...")
@@ -298,7 +333,17 @@ fun ChatTopAppBar(
             }
         }
     )
+
+    if (showImagePicker) {
+        LaunchedEffect(showImagePicker) {
+            imagePickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
+            showImagePicker = false
+        }
+    }
 }
+
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

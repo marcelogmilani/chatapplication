@@ -280,6 +280,19 @@ class ChatViewModel @Inject constructor(
         return currentUserId in participants
     }
 
+    fun updateGroupImage(conversationId: String, imageUri: Uri) {
+        viewModelScope.launch {
+            _groupActionState.value = GroupActionState.Loading
+            val result = chatRepository.updateGroupImage(conversationId, imageUri)
+            if (result.isSuccess) {
+                _groupActionState.value = GroupActionState.Success("Imagem do grupo atualizada")
+            } else {
+                val errorMessage = result.exceptionOrNull()?.message ?: "Erro ao atualizar imagem"
+                _groupActionState.value = GroupActionState.Error(errorMessage)
+            }
+        }
+    }
+
 
 }
 

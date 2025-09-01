@@ -2,6 +2,7 @@ package com.marcos.chatapplication.data.repository
 
 import android.net.Uri // ADICIONADO
 import android.util.Log
+import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
@@ -9,6 +10,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.snapshots
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.ktx.storage
+import com.google.firebase.storage.storage
 import com.marcos.chatapplication.domain.contracts.ChatRepository
 import com.marcos.chatapplication.domain.model.Conversation
 import com.marcos.chatapplication.domain.model.ConversationWithDetails
@@ -542,6 +545,44 @@ class ChatRepositoryImpl @Inject constructor(
             Log.e("ChatRepositoryImpl", "Erro ao buscar usuários disponíveis", e)
             Result.failure(e)
         }
+    }
+
+    // Na implementação do ChatRepository
+    override suspend fun updateGroupImage(conversationId: String, imageUri: Uri): Result<String> {
+        return try {
+            // Upload da imagem para o storage
+            val imageUrl = uploadGroupImage(conversationId, imageUri)
+            // Atualizar a conversa com a nova URL
+            updateGroupImage(conversationId, imageUrl)
+            Result.success(imageUrl)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateGroupImage(conversationId: String, imageUrl: String): Result<Unit> {
+        return try {
+            firestore.collection("conversations")
+                .document(conversationId)
+                .update("groupImageUrl", imageUrl)
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun uploadGroupImage(conversationId: String, imageUri: Uri): String {
+        val storageRef = Firebase.storage.reference
+        // Use o caminho "images/" que está permitido nas suas regras
+        val imageRef = storageRef.child("images/group_$conversationId/${System.currentTimeMillis()}.jpg")
+
+        return imageRef.putFile(imageUri)
+            .await()
+            .storage
+            .downloadUrl
+            .await()
+            .toString()
     }
 }
 
