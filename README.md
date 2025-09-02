@@ -17,7 +17,7 @@ ChatSphere é uma aplicação de chat moderna e funcional para Android, constru�
   - [Configuração do Firebase (Backend)](#configuração-do-firebase-backend)
   - [Configuração do Cliente (Android)](#configuração-do-cliente-android)
   - [Configuração das Cloud Functions](#configuração-das-cloud-functions)
-- [Próximos Passos](#-próximos-passos)
+- [Liberar o acesso](#configuração-do-app-check)
 
 ## 📖 Sobre o Projeto
 
@@ -89,6 +89,48 @@ Para executar este projeto localmente, siga estes passos:
 - Android Studio (versão mais recente recomendada).
 - Conta Firebase.
 - Node.js e npm (para as Cloud Functions).
+
+### Configuração do App Check
+
+Para proteger a sua aplicação contra abusos, o Firebase App Check bloqueia pedidos de clientes não verificados, mesmo em ambiente de desenvolvimento. Para que possa executar e testar a aplicação a partir do Android Studio num emulador ou dispositivo físico, precisa de registar manualmente um "token de depuração" para cada instalação.
+
+O processo é simples e precisa de ser feito uma vez por cada dispositivo/emulador de teste.
+
+**Passo 1: Executar a Aplicação e Ativar o App Check**
+
+1.  Ligue um dispositivo físico com a depuração USB ativada ou inicie um Emulador Android.
+2.  Compile e execute a aplicação no modo **debug** a partir do Android Studio.
+3.  A primeira vez que a aplicação arrancar, ela irá tentar comunicar com o Firestore ou outro serviço Firebase. O App Check irá falhar (isto é esperado) e irá gerar um token de depuração nos logs da aplicação.
+
+**Passo 2: Encontrar o Token de Depuração no Logcat**
+
+1.  Com a aplicação em execução, abra a janela do **Logcat** no Android Studio (`View -> Tool Windows -> Logcat`).
+2.  Na barra de pesquisa do Logcat, digite exatamente: `AppCheck`.
+3.  Você verá uma linha de log (geralmente de cor azul, nível Debug) que se parece com isto:
+
+    ```log
+    D/com.google.firebase.appcheck: Enter this debug token in the Firebase console:
+    [xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx]
+    ```
+
+4.  **Copie** o token alfanumérico longo que aparece (por exemplo, `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
+
+**Passo 3: Registar o Token de Depuração no Firebase Console**
+
+1.  Abra o seu projeto no **[Firebase Console](https://console.firebase.google.com/)**.
+2.  No menu de Compilação à esquerda, vá para a secção **App Check**.
+3.  Clique na aba **Apps** e, em seguida, clique no nome da sua aplicação Android.
+4.  Irá abrir-se um painel à direita. Clique no menu de três pontos (⋮) e selecione **"Gerir tokens de depuração"** (Manage debug tokens).
+5.  Clique em **"Adicionar token de depuração"**.
+6.  **Cole** o token que copiou do Logcat no campo que aparece.
+7.  Clique em **Salvar**.
+
+**Passo 4: Reiniciar a Aplicação**
+
+1.  Volte ao Android Studio e **execute a aplicação novamente** (ou feche-a e reabra-a) no mesmo dispositivo/emulador.
+2.  Neste segundo arranque, a aplicação irá usar o token de depuração. O Firebase irá reconhecê-lo como um dispositivo de teste registado e todas as chamadas à base de dados e outros serviços irão funcionar como esperado.
+
+*Este processo garante que apenas os dispositivos de desenvolvimento que aprovados podem aceder ao backend Firebase enquanto estão no modo de depuração.*
 
 ### Configuração do Firebase (Backend)
 1. Crie um novo projeto no [Firebase Console](https://console.firebase.google.com/).
