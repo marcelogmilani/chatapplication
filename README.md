@@ -17,7 +17,7 @@ ChatSphere é uma aplicação de chat moderna e funcional para Android, constru�
   - [Configuração do Firebase (Backend)](#configuração-do-firebase-backend)
   - [Configuração do Cliente (Android)](#configuração-do-cliente-android)
   - [Configuração das Cloud Functions](#configuração-das-cloud-functions)
-- [Liberar o acesso](#configuração-do-app-check)
+- [Liberar o acesso App Check](#configuração-do-app-check)
 
 ## 📖 Sobre o Projeto
 
